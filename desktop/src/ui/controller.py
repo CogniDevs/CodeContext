@@ -146,7 +146,7 @@ class PackerController(QObject):
             QMessageBox.information(self.view, "Импорты", f"Для файла '{target_rel}' не найдено локальных импортов.")
             return
 
-        self.tree_panel.select_specific_paths(deps)
+        self.view.tree_panel.select_specific_paths(deps)
         msg = f"Выделено импортируемых файлов ({len(deps)}) для '{target_rel}'"
         self.view.status_bar.showMessage(msg)
         self.view.control_panel.append_log(msg)

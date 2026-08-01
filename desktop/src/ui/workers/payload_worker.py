@@ -1,7 +1,39 @@
 import os
 import json
+import ast
 from PyQt6.QtCore import QThread, pyqtSignal
 from core.rust_core_service import RustCoreService
+
+
+def skeletonize_python_ast(content: str) -> str:
+    class FunctionBodyReplacer(ast.NodeTransformer):
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.FunctionDef:
+            self.generic_visit(node)
+            docstring = ast.get_docstring(node)
+            new_body = []
+            if docstring:
+                new_body.append(ast.Expr(value=ast.Constant(value=docstring)))
+            new_body.append(ast.Expr(value=ast.Constant(value=Ellipsis)))
+            node.body = new_body
+            return node
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> ast.AsyncFunctionDef:
+            self.generic_visit(node)
+            docstring = ast.get_docstring(node)
+            new_body = []
+            if docstring:
+                new_body.append(ast.Expr(value=ast.Constant(value=docstring)))
+            new_body.append(ast.Expr(value=ast.Constant(value=Ellipsis)))
+            node.body = new_body
+            return node
+
+    try:
+        tree = ast.parse(content)
+        transformed_tree = FunctionBodyReplacer().visit(tree)
+        ast.fix_missing_locations(transformed_tree)
+        return ast.unparse(transformed_tree)
+    except Exception:
+        return content
 
 
 class PayloadWorker(QThread):
@@ -50,6 +82,10 @@ class PayloadWorker(QThread):
                 try:
                     with open(full_path, "r", encoding="utf-8", errors="replace") as f:
                         content = f.read()
+
+                    if self.skeleton_mode and rel_path.lower().endswith('.py'):
+                        content = skeletonize_python_ast(content)
+
                     files_payload.append((rel_path, content))
                 except Exception as e:
                     files_payload.append((rel_path, f"[Ошибка чтения файла: {e}]"))

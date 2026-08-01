@@ -10,6 +10,10 @@ pub struct FileInput {
     pub content: String,
 }
 
+fn escape_cdata(text: &str) -> String {
+    text.replace("]]>", "]]]]><![CDATA[>")
+}
+
 pub fn generate_ascii_tree(
     node: &FileNode,
     selected_paths: Option<&HashSet<String>>,
@@ -83,8 +87,9 @@ pub fn build_payload(
             lines.push("  </instructions>\n\n".to_string());
         }
 
+        let safe_tree = escape_cdata(&tree_lines);
         lines.push("  <directory_structure>\n".to_string());
-        lines.push(format!("<![CDATA[\n{}\n]]>]]><![CDATA[]]>]]><![CDATA[<![CDATA[\n", tree_lines));
+        lines.push(format!("<![CDATA[\n{}\n]]>\n", safe_tree));
         lines.push("  </directory_structure>\n\n".to_string());
 
         lines.push("  <source_files>\n".to_string());
@@ -110,11 +115,10 @@ pub fn build_payload(
                 content = sanitize_secrets(&content);
             }
 
-            let safe_content =
-                content.replace("]]>]]><![CDATA[]]>]]><![CDATA[<![CDATA[", "]]>]]><![CDATA[]]>]]><![CDATA[<![CDATA[]]>]]><![CDATA[]]>]]><![CDATA[<![CDATA[<![CDATA[");
+            let safe_content = escape_cdata(&content);
 
             lines.push(format!("    <file path=\"{}\">\n", file.rel_path));
-            lines.push(format!("<![CDATA[\n{}\n]]>]]><![CDATA[]]>]]><![CDATA[<![CDATA[\n", safe_content));
+            lines.push(format!("<![CDATA[\n{}\n]]>\n", safe_content));
             lines.push("    </file>\n".to_string());
         }
 
