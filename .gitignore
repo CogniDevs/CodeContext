@@ -1,0 +1,22 @@
+# Rust build artifacts
+target/
+codecontext_core/pkg/
+codecontext_core/target/
+**/*.rs.bk
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.whl
+*.egg-info/
+
+# Node / Web / Angular
+node_modules/
+dist/
+.angular/
+
+# IDE / Editors
+.idea/
+.vscode/
