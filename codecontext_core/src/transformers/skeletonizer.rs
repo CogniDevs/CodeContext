@@ -3,7 +3,7 @@ use regex::Regex;
 pub fn skeletonize_code(text: &str, extension: &str) -> String {
     let ext = extension.trim_start_matches('.').to_lowercase();
     match ext.as_str() {
-        "py" | "ipynb" => skeletonize_python(text),
+        "py" | "ipynb" => text.to_string(),
         "js" | "jsx" | "ts" | "tsx" | "c" | "cpp" | "h" | "hpp" | "go" | "rs" | "java" | "cs"
         | "php" | "dart" | "kt" | "kts" | "swift" => skeletonize_brace(text),
         _ => text.to_string(),

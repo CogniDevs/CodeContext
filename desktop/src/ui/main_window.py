@@ -18,7 +18,7 @@ from core.updater import CURRENT_VERSION
 class CodeContextApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"CodeContext Desktop (Powered by Rust Engine) — {CURRENT_VERSION}")
+        self.setWindowTitle("CodeContext")
         self.resize(1100, 700)
         self.setAcceptDrops(True)
 
