@@ -233,7 +233,8 @@ class PackerController(QObject):
             strip,
             compress,
             sanitize,
-            skeleton
+            skeleton,
+            self.config_manager.comment_rules
         )
 
         self.payload_worker.finished.connect(

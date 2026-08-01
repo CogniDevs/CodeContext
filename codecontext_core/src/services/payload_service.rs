@@ -84,7 +84,7 @@ pub fn build_payload(
         }
 
         lines.push("  <directory_structure>\n".to_string());
-        lines.push(format!("<![CDATA[\n{}\n]]>]]><![CDATA[\n", tree_lines));
+        lines.push(format!("<![CDATA[\n{}\n]]>]]><![CDATA[]]>]]><![CDATA[<![CDATA[\n", tree_lines));
         lines.push("  </directory_structure>\n\n".to_string());
 
         lines.push("  <source_files>\n".to_string());
@@ -101,7 +101,7 @@ pub fn build_payload(
                 content = skeletonize_code(&content, ext);
             }
             if options.strip_comments {
-                content = strip_comments(&content, ext);
+                content = strip_comments(&content, ext, options.comment_rules_json.as_deref());
             }
             if options.compress_whitespace {
                 content = compress_whitespace(&content);
@@ -111,10 +111,10 @@ pub fn build_payload(
             }
 
             let safe_content =
-                content.replace("]]>]]><![CDATA[", "]]>]]><![CDATA[]]>]]><![CDATA[<![CDATA[");
+                content.replace("]]>]]><![CDATA[]]>]]><![CDATA[<![CDATA[", "]]>]]><![CDATA[]]>]]><![CDATA[<![CDATA[]]>]]><![CDATA[]]>]]><![CDATA[<![CDATA[<![CDATA[");
 
             lines.push(format!("    <file path=\"{}\">\n", file.rel_path));
-            lines.push(format!("<![CDATA[\n{}\n]]>]]><![CDATA[\n", safe_content));
+            lines.push(format!("<![CDATA[\n{}\n]]>]]><![CDATA[]]>]]><![CDATA[<![CDATA[\n", safe_content));
             lines.push("    </file>\n".to_string());
         }
 
@@ -155,7 +155,7 @@ pub fn build_payload(
                     content = skeletonize_code(&content, ext);
                 }
                 if options.strip_comments {
-                    content = strip_comments(&content, ext);
+                    content = strip_comments(&content, ext, options.comment_rules_json.as_deref());
                 }
                 if options.compress_whitespace {
                     content = compress_whitespace(&content);

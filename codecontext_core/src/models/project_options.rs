@@ -38,6 +38,7 @@ pub struct TransformOptions {
     pub xml_format: bool,
     pub always_send_full_tree: bool,
     pub system_prompt: String,
+    pub comment_rules_json: Option<String>,
 }
 
 impl Default for TransformOptions {
@@ -50,6 +51,7 @@ impl Default for TransformOptions {
             xml_format: true,
             always_send_full_tree: true,
             system_prompt: String::new(),
+            comment_rules_json: None,
         }
     }
 }

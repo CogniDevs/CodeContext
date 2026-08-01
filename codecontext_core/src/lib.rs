@@ -30,8 +30,8 @@ fn sanitize_secrets_py(text: &str) -> PyResult<String> {
 
 #[cfg(feature = "python")]
 #[pyfunction]
-fn strip_comments_py(text: &str, extension: &str) -> PyResult<String> {
-    Ok(transformers::strip_comments(text, extension))
+fn strip_comments_py(text: &str, extension: &str, rules_json: Option<&str>) -> PyResult<String> {
+    Ok(transformers::strip_comments(text, extension, rules_json))
 }
 
 #[cfg(feature = "python")]
@@ -130,8 +130,8 @@ pub fn sanitize_secrets_wasm(text: &str) -> String {
 
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
-pub fn strip_comments_wasm(text: &str, extension: &str) -> String {
-    transformers::strip_comments(text, extension)
+pub fn strip_comments_wasm(text: &str, extension: &str, rules_json: Option<String>) -> String {
+    transformers::strip_comments(text, extension, rules_json.as_deref())
 }
 
 #[cfg(feature = "wasm")]

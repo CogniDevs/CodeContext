@@ -1,4 +1,5 @@
 import os
+import json
 from PyQt6.QtCore import QThread, pyqtSignal
 from core.rust_core_service import RustCoreService
 
@@ -19,7 +20,8 @@ class PayloadWorker(QThread):
             strip_comments: bool,
             compress_whitespace: bool,
             sanitize_secrets: bool,
-            skeleton_mode: bool = False
+            skeleton_mode: bool = False,
+            comment_rules: dict = None
     ):
         super().__init__()
         self.root_dir = root_dir
@@ -33,6 +35,7 @@ class PayloadWorker(QThread):
         self.compress_whitespace = compress_whitespace
         self.sanitize_secrets = sanitize_secrets
         self.skeleton_mode = skeleton_mode
+        self.comment_rules = comment_rules
 
     def run(self):
         try:
@@ -51,6 +54,10 @@ class PayloadWorker(QThread):
                 except Exception as e:
                     files_payload.append((rel_path, f"[Ошибка чтения файла: {e}]"))
 
+            comment_rules_json = None
+            if self.comment_rules:
+                comment_rules_json = json.dumps(self.comment_rules)
+
             options = {
                 "strip_comments": self.strip_comments,
                 "compress_whitespace": self.compress_whitespace,
@@ -58,7 +65,8 @@ class PayloadWorker(QThread):
                 "skeleton_mode": self.skeleton_mode,
                 "xml_format": self.xml_format,
                 "always_send_full_tree": self.always_send_full_tree,
-                "system_prompt": self.system_prompt
+                "system_prompt": self.system_prompt,
+                "comment_rules_json": comment_rules_json
             }
 
             root_name = os.path.basename(self.root_dir) if self.root_dir else "project"
