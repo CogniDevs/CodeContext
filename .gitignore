@@ -16,7 +16,13 @@ venv/
 node_modules/
 dist/
 .angular/
+.sass-cache/
+coverage/
+tmp/
+out-tsc/
 
 # IDE / Editors
 .idea/
 .vscode/
+.DS_Store
+Thumbs.db
