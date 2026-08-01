@@ -7,6 +7,7 @@ class ControlPanel(QWidget):
     settings_changed = pyqtSignal()
     add_prompt_clicked = pyqtSignal()
     edit_prompt_clicked = pyqtSignal()
+    auto_watch_changed = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -51,10 +52,18 @@ class ControlPanel(QWidget):
         ai_layout.addLayout(toggles_layout_1)
 
         toggles_layout_2 = QHBoxLayout()
-        self.chk_sanitize_secrets = QCheckBox("Скрыть секреты (Rust)")
+        self.chk_sanitize_secrets = QCheckBox("Скрыть секреты")
         self.chk_sanitize_secrets.stateChanged.connect(lambda: self.settings_changed.emit())
 
+        self.chk_skeleton_mode = QCheckBox("Скелет (сигнатуры)")
+        self.chk_skeleton_mode.stateChanged.connect(lambda: self.settings_changed.emit())
+
+        self.chk_watch_changes = QCheckBox("Авто-слежение")
+        self.chk_watch_changes.stateChanged.connect(lambda state: self.auto_watch_changed.emit(state == 2))
+
         toggles_layout_2.addWidget(self.chk_sanitize_secrets)
+        toggles_layout_2.addWidget(self.chk_skeleton_mode)
+        toggles_layout_2.addWidget(self.chk_watch_changes)
         ai_layout.addLayout(toggles_layout_2)
 
         layout.addWidget(ai_group)
@@ -86,8 +95,24 @@ class ControlPanel(QWidget):
             self.chk_xml.isChecked(),
             self.chk_strip_comments.isChecked(),
             self.chk_compress_whitespace.isChecked(),
-            self.chk_sanitize_secrets.isChecked()
+            self.chk_sanitize_secrets.isChecked(),
+            self.chk_skeleton_mode.isChecked(),
+            self.chk_watch_changes.isChecked()
         )
+
+    def set_settings(self, xml: bool, strip: bool, compress: bool, sanitize: bool, skeleton: bool, watch: bool):
+        for chk in (self.chk_xml, self.chk_strip_comments, self.chk_compress_whitespace, self.chk_sanitize_secrets, self.chk_skeleton_mode, self.chk_watch_changes):
+            chk.blockSignals(True)
+
+        self.chk_xml.setChecked(xml)
+        self.chk_strip_comments.setChecked(strip)
+        self.chk_compress_whitespace.setChecked(compress)
+        self.chk_sanitize_secrets.setChecked(sanitize)
+        self.chk_skeleton_mode.setChecked(skeleton)
+        self.chk_watch_changes.setChecked(watch)
+
+        for chk in (self.chk_xml, self.chk_strip_comments, self.chk_compress_whitespace, self.chk_sanitize_secrets, self.chk_skeleton_mode, self.chk_watch_changes):
+            chk.blockSignals(False)
 
     def append_log(self, text: str):
         self.log_output.append(text)

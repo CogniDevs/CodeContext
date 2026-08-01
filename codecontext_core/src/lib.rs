@@ -6,8 +6,11 @@ pub mod services;
 pub mod tokenizer;
 pub mod transformers;
 
+#[cfg(any(feature = "python", feature = "wasm"))]
 use models::{FileNode, ScanOptions, TransformOptions};
+#[cfg(any(feature = "python", feature = "wasm"))]
 use services::FileInput;
+#[cfg(any(feature = "python", feature = "wasm"))]
 use std::collections::HashSet;
 
 #[cfg(feature = "python")]

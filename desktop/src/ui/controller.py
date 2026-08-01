@@ -56,6 +56,7 @@ class PackerController(QObject):
                 btn.clicked.connect(self.on_deps_select_requested)
 
         self.view.control_panel.settings_changed.connect(self.reload_tree)
+        self.view.control_panel.auto_watch_changed.connect(self.on_auto_watch_changed)
         self.view.control_panel.prompt_changed.connect(self.on_prompt_changed)
         self.view.control_panel.add_prompt_clicked.connect(self.view.create_new_prompt)
         self.view.control_panel.edit_prompt_clicked.connect(self.view.edit_current_prompt)
@@ -67,6 +68,14 @@ class PackerController(QObject):
         self.view.control_panel.populate_prompts(
             self.prompt_manager.prompts,
             self.config_manager.get("last_prompt_key", "just_code")
+        )
+        self.view.control_panel.set_settings(
+            self.config_manager.get("xml_format", True),
+            self.config_manager.get("strip_comments", False),
+            self.config_manager.get("compress_whitespace", False),
+            self.config_manager.get("sanitize_secrets", False),
+            self.config_manager.get("skeleton_mode", False),
+            self.config_manager.get("auto_watch", True)
         )
 
     def on_project_dir_changed(self, path: str):
@@ -89,6 +98,17 @@ class PackerController(QObject):
         if current_key:
             self.config_manager.set("last_prompt_key", current_key)
             self.reload_tree()
+
+    def on_auto_watch_changed(self, enabled: bool):
+        self.config_manager.set("auto_watch", enabled)
+        if enabled:
+            project_dir = self.view.paths_panel.get_project_dir()
+            if project_dir and os.path.exists(project_dir):
+                self.watcher.start_watching(project_dir)
+                self.view.control_panel.append_log("Автоматическое слежение за папкой включено.")
+        else:
+            self.watcher.stop_watching()
+            self.view.control_panel.append_log("Автоматическое слежение за папкой отключено.")
 
     def on_git_select_requested(self):
         project_dir = self.view.paths_panel.get_project_dir()
@@ -180,7 +200,13 @@ class PackerController(QObject):
         if current_key and current_key in self.prompt_manager.prompts:
             system_prompt = self.prompt_manager.prompts[current_key].get("prompt", "")
 
-        xml, strip, compress, sanitize = self.view.control_panel.get_settings()
+        xml, strip, compress, sanitize, skeleton, watch = self.view.control_panel.get_settings()
+
+        self.config_manager.set("xml_format", xml)
+        self.config_manager.set("strip_comments", strip)
+        self.config_manager.set("compress_whitespace", compress)
+        self.config_manager.set("sanitize_secrets", sanitize)
+        self.config_manager.set("skeleton_mode", skeleton)
 
         self.payload_worker = PayloadWorker(
             self.view.paths_panel.get_project_dir(),
@@ -192,7 +218,8 @@ class PackerController(QObject):
             self.config_manager.get("always_send_full_tree", True),
             strip,
             compress,
-            sanitize
+            sanitize,
+            skeleton
         )
 
         self.payload_worker.finished.connect(

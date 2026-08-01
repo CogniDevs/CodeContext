@@ -18,7 +18,8 @@ class PayloadWorker(QThread):
             always_send_full_tree: bool,
             strip_comments: bool,
             compress_whitespace: bool,
-            sanitize_secrets: bool
+            sanitize_secrets: bool,
+            skeleton_mode: bool = False
     ):
         super().__init__()
         self.root_dir = root_dir
@@ -31,6 +32,7 @@ class PayloadWorker(QThread):
         self.strip_comments = strip_comments
         self.compress_whitespace = compress_whitespace
         self.sanitize_secrets = sanitize_secrets
+        self.skeleton_mode = skeleton_mode
 
     def run(self):
         try:
@@ -53,7 +55,7 @@ class PayloadWorker(QThread):
                 "strip_comments": self.strip_comments,
                 "compress_whitespace": self.compress_whitespace,
                 "sanitize_secrets": self.sanitize_secrets,
-                "skeleton_mode": False,
+                "skeleton_mode": self.skeleton_mode,
                 "xml_format": self.xml_format,
                 "always_send_full_tree": self.always_send_full_tree,
                 "system_prompt": self.system_prompt

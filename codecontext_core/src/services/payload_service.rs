@@ -1,5 +1,7 @@
 use crate::models::{FileNode, TransformOptions};
-use crate::transformers::{compress_whitespace, sanitize_secrets, strip_comments};
+use crate::transformers::{
+    compress_whitespace, sanitize_secrets, skeletonize_code, strip_comments,
+};
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -20,7 +22,10 @@ pub fn generate_ascii_tree(
             .iter()
             .filter(|c| {
                 paths.contains(&c.rel_path)
-                    || (c.is_dir && paths.iter().any(|p| p.starts_with(&format!("{}/", c.rel_path))))
+                    || (c.is_dir
+                        && paths
+                            .iter()
+                            .any(|p| p.starts_with(&format!("{}/", c.rel_path))))
             })
             .collect()
     } else {
@@ -79,7 +84,7 @@ pub fn build_payload(
         }
 
         lines.push("  <directory_structure>\n".to_string());
-        lines.push(format!("<![CDATA[\n{}\n]]>\n", tree_lines));
+        lines.push(format!("<![CDATA[\n{}\n]]>]]><![CDATA[\n", tree_lines));
         lines.push("  </directory_structure>\n\n".to_string());
 
         lines.push("  <source_files>\n".to_string());
@@ -92,6 +97,9 @@ pub fn build_payload(
 
             let mut content = file.content.clone();
 
+            if options.skeleton_mode {
+                content = skeletonize_code(&content, ext);
+            }
             if options.strip_comments {
                 content = strip_comments(&content, ext);
             }
@@ -102,10 +110,11 @@ pub fn build_payload(
                 content = sanitize_secrets(&content);
             }
 
-            let safe_content = content.replace("]]>", "]]>]]><![CDATA[");
+            let safe_content =
+                content.replace("]]>]]><![CDATA[", "]]>]]><![CDATA[]]>]]><![CDATA[<![CDATA[");
 
             lines.push(format!("    <file path=\"{}\">\n", file.rel_path));
-            lines.push(format!("<![CDATA[\n{}\n]]>\n", safe_content));
+            lines.push(format!("<![CDATA[\n{}\n]]>]]><![CDATA[\n", safe_content));
             lines.push("    </file>\n".to_string());
         }
 
@@ -119,12 +128,18 @@ pub fn build_payload(
         if !options.system_prompt.trim().is_empty() {
             lines.push("=== ИНСТРУКЦИЯ ДЛЯ НЕЙРОСЕТИ ===\n".to_string());
             lines.push(format!("{}\n", options.system_prompt.trim()));
-            lines.push("\n================================================================================\n\n".to_string());
+            lines.push(
+                "\n================================================================================\n\n"
+                    .to_string(),
+            );
         }
 
         lines.push("=== ПОЛНАЯ СТРУКТУРА ПРОЕКТА (БЕЗ СИСТЕМНОГО МУСОРА) ===\n".to_string());
         lines.push(format!("{}\n", tree_lines));
-        lines.push("\n================================================================================\n\n".to_string());
+        lines.push(
+            "\n================================================================================\n\n"
+                .to_string(),
+        );
 
         if !files.is_empty() {
             lines.push("=== СОДЕРЖИМОЕ КЛЮЧЕВЫХ ФАЙЛОВ КОДА ===\n\n".to_string());
@@ -136,6 +151,9 @@ pub fn build_payload(
 
                 let mut content = file.content.clone();
 
+                if options.skeleton_mode {
+                    content = skeletonize_code(&content, ext);
+                }
                 if options.strip_comments {
                     content = strip_comments(&content, ext);
                 }

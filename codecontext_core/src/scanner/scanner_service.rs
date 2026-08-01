@@ -1,39 +1,62 @@
 use crate::models::ScanOptions;
 use ignore::gitignore::GitignoreBuilder;
+use regex::Regex;
 use std::path::Path;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::models::FileNode;
 
+fn matches_pattern(path_str: &str, parts: &[&str], file_name: &str, pattern: &str) -> bool {
+    let clean = pattern.trim().trim_end_matches('/');
+    if clean.is_empty() {
+        return false;
+    }
+
+    if parts.contains(&clean)
+        || path_str == clean
+        || path_str.starts_with(&(clean.to_string() + "/"))
+    {
+        return true;
+    }
+
+    if clean.contains('*') || clean.contains('?') {
+        let escaped = regex::escape(clean).replace("\\*", ".*").replace("\\?", ".");
+        let regex_str = format!("^{}$", escaped);
+        if let Ok(re) = Regex::new(&regex_str) {
+            if re.is_match(path_str) || re.is_match(file_name) {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
 pub fn is_ignored(rel_path: &str, is_dir: bool, options: &ScanOptions) -> bool {
     let path_str = rel_path.replace('\\', "/");
     let parts: Vec<&str> = path_str.split('/').collect();
+    let file_name = parts.last().copied().unwrap_or("");
 
     for exclude in &options.manual_excludes {
-        let clean = exclude.trim().trim_end_matches('/');
-        if clean.is_empty() {
-            continue;
-        }
-        if parts.contains(&clean) || path_str == clean || path_str.starts_with(&(clean.to_string() + "/")) {
+        if matches_pattern(&path_str, &parts, file_name, exclude) {
             return true;
         }
     }
 
     if options.ignore_lockfiles {
         for lockfile in &options.lockfiles_excludes {
-            let clean = lockfile.trim();
-            if !clean.is_empty() && (parts.contains(&clean) || path_str == clean) {
+            if matches_pattern(&path_str, &parts, file_name, lockfile) {
                 return true;
             }
         }
     }
 
     let default_binary_exts = [
-        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".pdf", ".exe", ".dll",
-        ".bin", ".zip", ".tar", ".gz", ".rar", ".7z", ".mp3", ".mp4", ".wav", ".avi",
-        ".mov", ".woff", ".woff2", ".ttf", ".db", ".sqlite", ".sqlite3", ".dmg", ".iso",
-        ".msi", ".class", ".pyc", ".o", ".obj", ".so", ".dylib", ".svg", ".rlib",
-        ".rmeta", ".pdb", ".whl", ".wasm", ".d", ".a", ".lib"
+        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".pdf", ".exe", ".dll", ".bin", ".zip",
+        ".tar", ".gz", ".rar", ".7z", ".mp3", ".mp4", ".wav", ".avi", ".mov", ".woff", ".woff2",
+        ".ttf", ".db", ".sqlite", ".sqlite3", ".dmg", ".iso", ".msi", ".class", ".pyc", ".o",
+        ".obj", ".so", ".dylib", ".svg", ".rlib", ".rmeta", ".pdb", ".whl", ".wasm", ".d", ".a",
+        ".lib",
     ];
 
     if !is_dir {
@@ -41,12 +64,16 @@ pub fn is_ignored(rel_path: &str, is_dir: bool, options: &ScanOptions) -> bool {
             let ext_with_dot = format!(".{}", ext.to_lowercase());
 
             if options.ignore_binary {
-                if default_binary_exts.contains(&ext_with_dot.as_str()) || options.binary_extensions.contains(&ext_with_dot) {
+                if default_binary_exts.contains(&ext_with_dot.as_str())
+                    || options.binary_extensions.contains(&ext_with_dot)
+                {
                     return true;
                 }
             }
 
-            if !options.whitelist_extensions.is_empty() && !options.whitelist_extensions.contains(&ext_with_dot) {
+            if !options.whitelist_extensions.is_empty()
+                && !options.whitelist_extensions.contains(&ext_with_dot)
+            {
                 return true;
             }
         }
@@ -124,7 +151,11 @@ pub fn scan_directory(root_dir: &str, options: &ScanOptions) -> Option<FileNode>
                 continue;
             }
 
-            let size = if is_dir { 0 } else { entry.metadata().map_or(0, |m| m.len()) };
+            let size = if is_dir {
+                0
+            } else {
+                entry.metadata().map_or(0, |m| m.len())
+            };
             let file_name = entry.file_name().to_string_lossy().to_string();
             let full_path_str = full_path.to_string_lossy().to_string();
 
