@@ -6,7 +6,7 @@ import { FileNode } from '../../../core/services/file-system.service';
 @Component({
   selector: 'app-tree-node',
   standalone: true,
-  imports: [CommonModule, TreeNodeComponent],
+  imports: [CommonModule],
   templateUrl: './tree-node.component.html',
   styleUrl: './tree-node.component.scss'
 })

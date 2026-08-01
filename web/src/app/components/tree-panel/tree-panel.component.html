@@ -22,13 +22,15 @@
         <span class="spinner"></span>
         <span>Сканирование проекта...</span>
       </div>
-    } @else if (fileSystemService.rootNode(); as root) {
-      <app-tree-node [node]="root" [searchQuery]="searchQuery" />
     } @else {
-      <div class="tree-state-msg text-muted">
-        <p>Проект не выбран.</p>
-        <p class="sub">Нажмите «Открыть проект» в шапке или перетащите папку сюда.</p>
-      </div>
+      @if (fileSystemService.rootNode(); as root) {
+        <app-tree-node [node]="root" [searchQuery]="searchQuery" />
+      } @else {
+        <div class="tree-state-msg text-muted">
+          <p>Проект не выбран.</p>
+          <p class="sub">Нажмите «Открыть проект» в шапке или перетащите папку сюда.</p>
+        </div>
+      }
     }
   </div>
 </div>
