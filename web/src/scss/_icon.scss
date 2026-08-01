@@ -1,0 +1,58 @@
+.icon {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  vertical-align: middle;
+  background-color: currentColor;
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  -webkit-mask-size: contain;
+
+  &.icon-folder-open {
+    mask-image: url('../../public/assets/icons/folder-open.svg');
+    -webkit-mask-image: url('../../public/assets/icons/folder-open.svg');
+  }
+
+  &.icon-file-search {
+    mask-image: url('../../public/assets/icons/file-search.svg');
+    -webkit-mask-image: url('../../public/assets/icons/file-search.svg');
+  }
+
+  &.icon-sun {
+    mask-image: url('../../public/assets/icons/sun.svg');
+    -webkit-mask-image: url('../../public/assets/icons/sun.svg');
+  }
+
+  &.icon-moon {
+    mask-image: url('../../public/assets/icons/moon.svg');
+    -webkit-mask-image: url('../../public/assets/icons/moon.svg');
+  }
+
+  &.icon-folder {
+    mask-image: url('../../public/assets/icons/folder.svg');
+    -webkit-mask-image: url('../../public/assets/icons/folder.svg');
+  }
+
+  &.icon-add {
+    mask-image: url('../../public/assets/icons/add.svg');
+    -webkit-mask-image: url('../../public/assets/icons/add.svg');
+  }
+
+  &.icon-edit {
+    mask-image: url('../../public/assets/icons/edit.svg');
+    -webkit-mask-image: url('../../public/assets/icons/edit.svg');
+  }
+
+  &.icon-delete {
+    mask-image: url('../../public/assets/icons/delete.svg');
+    -webkit-mask-image: url('../../public/assets/icons/delete.svg');
+  }
+
+  &.icon-app {
+    mask-image: url('../../public/favicon.svg');
+    -webkit-mask-image: url('../../public/favicon.svg');
+  }
+}
