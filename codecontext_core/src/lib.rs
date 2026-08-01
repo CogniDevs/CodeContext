@@ -53,6 +53,17 @@ fn scan_directory_py(root_dir: &str, options_json: &str) -> PyResult<String> {
 
 #[cfg(feature = "python")]
 #[pyfunction]
+fn trace_dependencies_py(
+    root_dir: &str,
+    target_rel_path: &str,
+    content: &str,
+) -> PyResult<Vec<String>> {
+    let deps = services::trace_dependencies(root_dir, target_rel_path, content);
+    Ok(deps.into_iter().collect())
+}
+
+#[cfg(feature = "python")]
+#[pyfunction]
 fn build_payload_py(
     root_name: &str,
     root_node_json: &str,
@@ -97,6 +108,7 @@ fn codecontext_core(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(strip_comments_py, m)?)?;
     m.add_function(wrap_pyfunction!(count_tokens_py, m)?)?;
     m.add_function(wrap_pyfunction!(scan_directory_py, m)?)?;
+    m.add_function(wrap_pyfunction!(trace_dependencies_py, m)?)?;
     m.add_function(wrap_pyfunction!(build_payload_py, m)?)?;
     Ok(())
 }
@@ -133,6 +145,18 @@ pub fn count_tokens_wasm(text: &str) -> usize {
 pub fn is_ignored_wasm(rel_path: &str, is_dir: bool, options_json: &str) -> bool {
     let options: ScanOptions = serde_json::from_str(options_json).unwrap_or_default();
     scanner::is_ignored(rel_path, is_dir, &options)
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn trace_dependencies_wasm(
+    root_dir: &str,
+    target_rel_path: &str,
+    content: &str,
+) -> Vec<String> {
+    services::trace_dependencies(root_dir, target_rel_path, content)
+        .into_iter()
+        .collect()
 }
 
 #[cfg(feature = "wasm")]

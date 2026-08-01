@@ -10,6 +10,7 @@ pub struct ScanOptions {
     pub gitignore_disabled_rules: Vec<String>,
     pub binary_extensions: Vec<String>,
     pub lockfiles_excludes: Vec<String>,
+    pub output_file_path: Option<String>,
 }
 
 impl Default for ScanOptions {
@@ -23,6 +24,7 @@ impl Default for ScanOptions {
             gitignore_disabled_rules: Vec::new(),
             binary_extensions: Vec::new(),
             lockfiles_excludes: Vec::new(),
+            output_file_path: None,
         }
     }
 }

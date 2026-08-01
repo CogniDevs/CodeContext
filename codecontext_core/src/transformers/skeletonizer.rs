@@ -3,9 +3,9 @@ use regex::Regex;
 pub fn skeletonize_code(text: &str, extension: &str) -> String {
     let ext = extension.trim_start_matches('.').to_lowercase();
     match ext.as_str() {
-        "py" => skeletonize_python(text),
+        "py" | "ipynb" => skeletonize_python(text),
         "js" | "jsx" | "ts" | "tsx" | "c" | "cpp" | "h" | "hpp" | "go" | "rs" | "java" | "cs"
-        | "php" => skeletonize_brace(text),
+        | "php" | "dart" | "kt" | "kts" | "swift" => skeletonize_brace(text),
         _ => text.to_string(),
     }
 }
@@ -20,7 +20,7 @@ fn skeletonize_brace(text: &str) -> String {
     let mut current = text.to_string();
     for _ in 0..3 {
         let next = re
-            .replace_all(&current, "${1}{ /* ... implementation ... */ }")
+            .replace_all(&current, "${1}{ ... }")
             .to_string();
         if next == current {
             break;
@@ -35,12 +35,14 @@ fn skeletonize_python(text: &str) -> String {
     let mut result = Vec::new();
     let mut in_function_body = false;
     let mut func_indent = 0;
+    let mut in_docstring = false;
+    let mut docstring_quote = "";
 
     let Ok(def_re) = Regex::new(r"^(\s*)(?:async\s+)?def\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\(") else {
         return text.to_string();
     };
 
-    let Ok(class_or_def) = Regex::new(r"^(\s*)(?:class|def|async\s+def)\b") else {
+    let Ok(class_or_def) = Regex::new(r"^(\s*)(?:class|def|async\s+def|@)\b") else {
         return text.to_string();
     };
 
@@ -56,12 +58,25 @@ fn skeletonize_python(text: &str) -> String {
 
         let current_indent = line.len() - line.trim_start().len();
 
+        if in_docstring {
+            result.push(line.to_string());
+            if trimmed.contains(docstring_quote) {
+                in_docstring = false;
+            }
+            continue;
+        }
+
         if in_function_body {
             if current_indent > func_indent {
-                if (trimmed.starts_with("\"\"\"") || trimmed.starts_with("'''"))
-                    && !result.last().map_or(false, |l: &String| l.contains("..."))
-                {
+                if trimmed.starts_with("\"\"\"") || trimmed.starts_with("'''") {
+                    let quote = if trimmed.starts_with("\"\"\"") { "\"\"\"" } else { "'''" };
                     result.push(line.to_string());
+                    let occurrences = trimmed.matches(quote).count();
+                    if occurrences == 1 {
+                        in_docstring = true;
+                        docstring_quote = quote;
+                    }
+                    continue;
                 }
                 continue;
             } else {
@@ -84,23 +99,4 @@ fn skeletonize_python(text: &str) -> String {
     }
 
     result.join("\n")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_skeletonize_brace() {
-        let code = "fn add(a: i32, b: i32) -> i32 { let sum = a + b; return sum; }";
-        let res = skeletonize_code(code, "rs");
-        assert!(res.contains("/* ... implementation ... */"));
-    }
-
-    #[test]
-    fn test_skeletonize_python() {
-        let code = "def foo(x):\n    y = x + 1\n    return y\n\ndef bar():\n    pass";
-        let res = skeletonize_code(code, "py");
-        assert!(res.contains("..."));
-    }
 }

@@ -136,6 +136,17 @@ pub fn scan_directory(root_dir: &str, options: &ScanOptions) -> Option<FileNode>
         for entry in items {
             let full_path = entry.path();
             let is_dir = entry.file_type().map_or(false, |ft| ft.is_dir());
+
+            if let Some(target_out) = &options.output_file_path {
+                if !target_out.is_empty() {
+                    let norm_full = full_path.to_string_lossy().replace('\\', "/");
+                    let norm_out = target_out.replace('\\', "/");
+                    if norm_full == norm_out {
+                        continue;
+                    }
+                }
+            }
+
             let rel_path = match full_path.strip_prefix(root_path) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,

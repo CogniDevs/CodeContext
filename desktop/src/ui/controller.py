@@ -91,7 +91,7 @@ class PackerController(QObject):
         self.reload_tree()
 
     def on_export_path_changed(self, path: str):
-        pass
+        self.reload_tree()
 
     def on_prompt_changed(self):
         current_key = self.view.control_panel.get_current_prompt_key()
@@ -128,12 +128,25 @@ class PackerController(QObject):
             QMessageBox.information(self.view, "Импорты", "Выберите файл в дереве для анализа его импортов.")
             return
 
-        deps = self.dependency_service.trace_dependencies(project_dir, target_rel)
+        full_target_path = os.path.join(project_dir, target_rel)
+        content = ""
+        if os.path.exists(full_target_path) and os.path.isfile(full_target_path):
+            try:
+                with open(full_target_path, "r", encoding="utf-8", errors="replace") as f:
+                    content = f.read()
+            except Exception:
+                content = ""
+
+        if RustCoreService.is_available():
+            deps = RustCoreService.trace_dependencies(project_dir, target_rel, content)
+        else:
+            deps = self.dependency_service.trace_dependencies(project_dir, target_rel)
+
         if not deps:
             QMessageBox.information(self.view, "Импорты", f"Для файла '{target_rel}' не найдено локальных импортов.")
             return
 
-        self.view.tree_panel.select_specific_paths(deps)
+        self.tree_panel.select_specific_paths(deps)
         msg = f"Выделено импортируемых файлов ({len(deps)}) для '{target_rel}'"
         self.view.status_bar.showMessage(msg)
         self.view.control_panel.append_log(msg)
@@ -156,7 +169,8 @@ class PackerController(QObject):
             "manual_excludes": self.config_manager.get("global_excludes", []),
             "gitignore_disabled_rules": self.config_manager.get("gitignore_disabled_rules", []),
             "binary_extensions": self.config_manager.get("binary_extensions", []),
-            "lockfiles_excludes": self.config_manager.get("lockfiles_excludes", [])
+            "lockfiles_excludes": self.config_manager.get("lockfiles_excludes", []),
+            "output_file_path": self.view.paths_panel.get_export_path()
         }
 
         saved_states = self.view.tree_panel.get_check_states()

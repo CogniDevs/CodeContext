@@ -45,6 +45,13 @@ class RustCoreService:
         return codecontext_core.compress_whitespace_py(text)
 
     @staticmethod
+    def trace_dependencies(root_dir: str, target_rel_path: str, content: str) -> set:
+        if not codecontext_core:
+            return set()
+        deps = codecontext_core.trace_dependencies_py(root_dir, target_rel_path, content)
+        return set(deps)
+
+    @staticmethod
     def build_payload(
         root_name: str,
         root_node: dict,

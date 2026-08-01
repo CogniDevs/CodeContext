@@ -16,8 +16,20 @@ fn get_patterns() -> &'static Vec<SecretPattern> {
                 replacement: "[REDACTED_OPENAI_KEY]",
             },
             SecretPattern {
+                regex: Regex::new(r"sk-ant-[a-zA-Z0-9_-]{20,}").unwrap(),
+                replacement: "[REDACTED_ANTHROPIC_KEY]",
+            },
+            SecretPattern {
                 regex: Regex::new(r"ghp_[a-zA-Z0-9]{36}").unwrap(),
                 replacement: "[REDACTED_GITHUB_TOKEN]",
+            },
+            SecretPattern {
+                regex: Regex::new(r"glpat-[a-zA-Z0-9_-]{20}").unwrap(),
+                replacement: "[REDACTED_GITLAB_TOKEN]",
+            },
+            SecretPattern {
+                regex: Regex::new(r"hf_[a-zA-Z0-9]{34,}").unwrap(),
+                replacement: "[REDACTED_HUGGINGFACE_TOKEN]",
             },
             SecretPattern {
                 regex: Regex::new(r"xox[baprs]-[a-zA-Z0-9]{10,}").unwrap(),
@@ -28,6 +40,22 @@ fn get_patterns() -> &'static Vec<SecretPattern> {
                 replacement: "[REDACTED_AWS_KEY]",
             },
             SecretPattern {
+                regex: Regex::new(r"AIzaSy[a-zA-Z0-9_-]{33}").unwrap(),
+                replacement: "[REDACTED_GOOGLE_KEY]",
+            },
+            SecretPattern {
+                regex: Regex::new(r"sk_live_[a-zA-Z0-9]{24}").unwrap(),
+                replacement: "[REDACTED_STRIPE_KEY]",
+            },
+            SecretPattern {
+                regex: Regex::new(r"eyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}").unwrap(),
+                replacement: "[REDACTED_JWT_TOKEN]",
+            },
+            SecretPattern {
+                regex: Regex::new(r"(?i)(postgres|postgresql|mongodb|mongodb\+srv|mysql|redis)://[a-zA-Z0-9_]+:[^@\s]+@[a-zA-Z0-9_.-]+:[0-9]+/[a-zA-Z0-9_.-]+").unwrap(),
+                replacement: "[REDACTED_CONNECTION_STRING]",
+            },
+            SecretPattern {
                 regex: Regex::new(r"(?s)-----BEGIN [A-Z ]+ PRIVATE KEY-----.*?-----END [A-Z ]+ PRIVATE KEY-----").unwrap(),
                 replacement: "[REDACTED_PRIVATE_KEY]",
             },
@@ -36,7 +64,7 @@ fn get_patterns() -> &'static Vec<SecretPattern> {
                 replacement: r#"$1"[REDACTED_SECRET]""#,
             },
             SecretPattern {
-                regex: Regex::new(r#"(?im)^(\s*(?:[\w_.]*?(?:api[_-]?key|secret|password|token|bearer)[\w_.]*?)\s*[:=]\s*)'[^']{8,}'"#).unwrap(),
+                regex: Regex::new(r#"(?im)^(\s*(?:[\w_.]*?(?:api[_-]?key|secret|password|token|bearer)[\w_.]*?)\s*)'[^']{8,}'"#).unwrap(),
                 replacement: r#"$1'[REDACTED_SECRET]'"#,
             },
         ]
