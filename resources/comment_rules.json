@@ -1,0 +1,48 @@
+{
+	"rules": {
+		"c_style": {
+			"extensions": [
+				".js",
+				".jsx",
+				".ts",
+				".tsx",
+				".c",
+				".cpp",
+				".h",
+				".hpp",
+				".go",
+				".rs",
+				".java",
+				".cs",
+				".php",
+				".css",
+				".scss",
+				".dart",
+				".kt",
+				".kts"
+			]
+		},
+		"python_style": {
+			"extensions": [".py", ".ipynb"]
+		},
+		"xml_style": {
+			"extensions": [".html", ".xml", ".svelte", ".vue", ".astro", ".svg"]
+		},
+		"hash_style": {
+			"extensions": [
+				".sh",
+				".bash",
+				".yaml",
+				".yml",
+				".toml",
+				".ini",
+				"makefile",
+				"dockerfile",
+				".rb"
+			]
+		},
+		"sql_style": {
+			"extensions": [".sql"]
+		}
+	}
+}

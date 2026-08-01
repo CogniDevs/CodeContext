@@ -1,4 +1,5 @@
 use crate::models::ScanOptions;
+use ignore::gitignore::GitignoreBuilder;
 use std::path::Path;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -9,7 +10,7 @@ pub fn is_ignored(rel_path: &str, is_dir: bool, options: &ScanOptions) -> bool {
     let parts: Vec<&str> = path_str.split('/').collect();
 
     for exclude in &options.manual_excludes {
-        let clean = exclude.trim();
+        let clean = exclude.trim().trim_end_matches('/');
         if clean.is_empty() {
             continue;
         }
@@ -27,12 +28,22 @@ pub fn is_ignored(rel_path: &str, is_dir: bool, options: &ScanOptions) -> bool {
         }
     }
 
+    let default_binary_exts = [
+        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".pdf", ".exe", ".dll",
+        ".bin", ".zip", ".tar", ".gz", ".rar", ".7z", ".mp3", ".mp4", ".wav", ".avi",
+        ".mov", ".woff", ".woff2", ".ttf", ".db", ".sqlite", ".sqlite3", ".dmg", ".iso",
+        ".msi", ".class", ".pyc", ".o", ".obj", ".so", ".dylib", ".svg", ".rlib",
+        ".rmeta", ".pdb", ".whl", ".wasm", ".d", ".a", ".lib"
+    ];
+
     if !is_dir {
         if let Some(ext) = Path::new(&path_str).extension().and_then(|s| s.to_str()) {
             let ext_with_dot = format!(".{}", ext.to_lowercase());
 
-            if options.ignore_binary && options.binary_extensions.contains(&ext_with_dot) {
-                return true;
+            if options.ignore_binary {
+                if default_binary_exts.contains(&ext_with_dot.as_str()) || options.binary_extensions.contains(&ext_with_dot) {
+                    return true;
+                }
             }
 
             if !options.whitelist_extensions.is_empty() && !options.whitelist_extensions.contains(&ext_with_dot) {
@@ -51,10 +62,23 @@ pub fn scan_directory(root_dir: &str, options: &ScanOptions) -> Option<FileNode>
         return None;
     }
 
+    let mut gitignore_builder = GitignoreBuilder::new(root_path);
+    let gitignore_file = root_path.join(".gitignore");
+    if options.use_gitignore && gitignore_file.exists() {
+        let _ = gitignore_builder.add(&gitignore_file);
+    }
+    let gitignore = gitignore_builder.build().ok();
+
     let root_name = root_path.file_name()?.to_string_lossy().to_string();
     let mut root_node = FileNode::new(root_name, root_dir.to_string(), String::new(), true, 0);
 
-    fn populate_node(current_path: &Path, root_path: &Path, parent_node: &mut FileNode, options: &ScanOptions) {
+    fn populate_node(
+        current_path: &Path,
+        root_path: &Path,
+        parent_node: &mut FileNode,
+        options: &ScanOptions,
+        gitignore: Option<&ignore::gitignore::Gitignore>,
+    ) {
         let entries = match std::fs::read_dir(current_path) {
             Ok(e) => e,
             Err(_) => return,
@@ -79,6 +103,12 @@ pub fn scan_directory(root_dir: &str, options: &ScanOptions) -> Option<FileNode>
                 Err(_) => continue,
             };
 
+            if let Some(gi) = gitignore {
+                if gi.matched_path_or_any_parents(&full_path, is_dir).is_ignore() {
+                    continue;
+                }
+            }
+
             if is_ignored(&rel_path, is_dir, options) {
                 continue;
             }
@@ -90,13 +120,13 @@ pub fn scan_directory(root_dir: &str, options: &ScanOptions) -> Option<FileNode>
             let mut child_node = FileNode::new(file_name, full_path_str, rel_path, is_dir, size);
 
             if is_dir {
-                populate_node(&full_path, root_path, &mut child_node, options);
+                populate_node(&full_path, root_path, &mut child_node, options, gitignore);
             }
 
             parent_node.children.push(child_node);
         }
     }
 
-    populate_node(root_path, root_path, &mut root_node, options);
+    populate_node(root_path, root_path, &mut root_node, options, gitignore.as_ref());
     Some(root_node)
 }
