@@ -1,0 +1,76 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanOptions {
+    pub use_gitignore: bool,
+    pub ignore_binary: bool,
+    pub ignore_lockfiles: bool,
+    pub whitelist_extensions: Vec<String>,
+    pub manual_excludes: Vec<String>,
+    pub gitignore_disabled_rules: Vec<String>,
+    pub binary_extensions: Vec<String>,
+    pub lockfiles_excludes: Vec<String>,
+}
+
+impl Default for ScanOptions {
+    fn default() -> Self {
+        Self {
+            use_gitignore: true,
+            ignore_binary: true,
+            ignore_lockfiles: true,
+            whitelist_extensions: Vec::new(),
+            manual_excludes: Vec::new(),
+            gitignore_disabled_rules: Vec::new(),
+            binary_extensions: Vec::new(),
+            lockfiles_excludes: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransformOptions {
+    pub strip_comments: bool,
+    pub compress_whitespace: bool,
+    pub sanitize_secrets: bool,
+    pub skeleton_mode: bool,
+    pub xml_format: bool,
+    pub always_send_full_tree: bool,
+    pub system_prompt: String,
+}
+
+impl Default for TransformOptions {
+    fn default() -> Self {
+        Self {
+            strip_comments: false,
+            compress_whitespace: false,
+            sanitize_secrets: false,
+            skeleton_mode: false,
+            xml_format: true,
+            always_send_full_tree: true,
+            system_prompt: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileNode {
+    pub name: String,
+    pub full_path: String,
+    pub rel_path: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub children: Vec<FileNode>,
+}
+
+impl FileNode {
+    pub fn new(name: String, full_path: String, rel_path: String, is_dir: bool, size: u64) -> Self {
+        Self {
+            name,
+            full_path,
+            rel_path,
+            is_dir,
+            size,
+            children: Vec::new(),
+        }
+    }
+}
