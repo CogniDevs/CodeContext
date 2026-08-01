@@ -10,24 +10,99 @@ pub fn skeletonize_code(text: &str, extension: &str) -> String {
     }
 }
 
+fn find_matching_brace_bytes(bytes: &[u8], start_idx: usize) -> Option<usize> {
+    let mut brace_count = 0;
+    let mut i = start_idx;
+    let len = bytes.len();
+
+    let mut in_string = false;
+    let mut in_char = false;
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+    let mut escaped = false;
+
+    while i < len {
+        let b = bytes[i];
+        let next = if i + 1 < len { Some(bytes[i + 1]) } else { None };
+
+        if in_line_comment {
+            if b == b'\n' {
+                in_line_comment = false;
+            }
+        } else if in_block_comment {
+            if b == b'*' && next == Some(b'/') {
+                in_block_comment = false;
+                i += 1;
+            }
+        } else if in_string {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                in_string = false;
+            }
+        } else if in_char {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'\'' {
+                in_char = false;
+            }
+        } else {
+            if b == b'/' && next == Some(b'/') {
+                in_line_comment = true;
+                i += 1;
+            } else if b == b'/' && next == Some(b'*') {
+                in_block_comment = true;
+                i += 1;
+            } else if b == b'"' {
+                in_string = true;
+                escaped = false;
+            } else if b == b'\'' {
+                in_char = true;
+                escaped = false;
+            } else if b == b'{' {
+                brace_count += 1;
+            } else if b == b'}' {
+                brace_count -= 1;
+                if brace_count == 0 {
+                    return Some(i);
+                }
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
 fn skeletonize_brace(text: &str) -> String {
     let Ok(re) = Regex::new(
-        r"(?m)(\b(?:pub\s+|async\s+|public\s+|private\s+|protected\s+|static\s+|inline\s+|virtual\s+|override\s+|const\s+|void\s+|int\s+|bool\s+|char\s+|double\s+|float\s+|fn\s+|func\s+|function\s+)+\w+\s*(?:<[^>]*>)?\s*\([^)]*\)\s*(?:->|:)?\s*[^{]*?)\{[^{}]*\}",
+        r"(?m)\b(?:pub\s+|async\s+|public\s+|private\s+|protected\s+|static\s+|inline\s+|virtual\s+|override\s+|const\s+|void\s+|int\s+|bool\s+|char\s+|double\s+|float\s+|fn\s+|func\s+|function\s+)+\w+\s*(?:<[^>]*>)?\s*\([^)]*\)\s*(?:->|:)?\s*[^{]*?\{",
     ) else {
         return text.to_string();
     };
 
-    let mut current = text.to_string();
-    for _ in 0..3 {
-        let next = re
-            .replace_all(&current, "${1}{ ... }")
-            .to_string();
-        if next == current {
-            break;
+    let mut result = text.to_string();
+    let mut replacements = Vec::new();
+
+    for mat in re.find_iter(text) {
+        let open_brace_idx = mat.end() - 1;
+        if let Some(close_brace_idx) = find_matching_brace_bytes(text.as_bytes(), open_brace_idx) {
+            replacements.push((open_brace_idx, close_brace_idx));
         }
-        current = next;
     }
-    current
+
+    replacements.sort_by(|a, b| b.0.cmp(&a.0));
+
+    for (start, end) in replacements {
+        if start + 1 < end {
+            result.replace_range((start + 1)..end, " ... ");
+        }
+    }
+
+    result
 }
 
 fn skeletonize_python(text: &str) -> String {

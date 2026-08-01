@@ -96,10 +96,16 @@ pub fn scan_directory(root_dir: &str, options: &ScanOptions) -> Option<FileNode>
             let _ = gitignore_builder.add(&gitignore_file);
         } else if let Ok(content) = std::fs::read_to_string(&gitignore_file) {
             for line in content.lines() {
-                let trimmed = line.trim();
-                if !trimmed.is_empty() && !trimmed.starts_with('#') {
-                    if !options.gitignore_disabled_rules.contains(&trimmed.to_string()) {
-                        let _ = gitignore_builder.add_line(None, line);
+                let mut trimmed = line.trim().to_string();
+                if trimmed.is_empty() || trimmed.starts_with('#') {
+                    continue;
+                }
+                if let Some(pos) = trimmed.find(" #") {
+                    trimmed = trimmed[..pos].trim().to_string();
+                }
+                if !trimmed.is_empty() {
+                    if !options.gitignore_disabled_rules.contains(&trimmed) {
+                        let _ = gitignore_builder.add_line(None, &trimmed);
                     }
                 }
             }

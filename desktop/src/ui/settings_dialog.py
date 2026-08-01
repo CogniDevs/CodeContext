@@ -15,9 +15,14 @@ def parse_gitignore(gitignore_path: str) -> list:
         with open(gitignore_path, 'r', encoding='utf-8', errors='replace') as f:
             for line in f:
                 line = line.strip()
-                if not line or line.startswith('#'):
+                if not line:
                     continue
-                rules.append(line)
+                if line.startswith('#'):
+                    continue
+                if ' #' in line:
+                    line = line.split(' #')[0].strip()
+                if line:
+                    rules.append(line)
     except Exception:
         pass
     return rules

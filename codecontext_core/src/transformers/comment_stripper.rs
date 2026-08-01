@@ -69,6 +69,8 @@ pub fn strip_comments(text: &str, extension: &str, rules_json: Option<&str>) -> 
                                         m.as_str().to_string()
                                     } else if let Some(m) = caps.get(2) {
                                         m.as_str().to_string()
+                                    } else if let Some(m) = caps.get(3) {
+                                        m.as_str().to_string()
                                     } else {
                                         String::new()
                                     }
@@ -96,12 +98,14 @@ pub fn strip_comments(text: &str, extension: &str, rules_json: Option<&str>) -> 
 
 fn strip_c_style(text: &str) -> String {
     let re = C_STYLE_RE.get_or_init(|| {
-        Regex::new(r#"(?m)("(?:\\.|[^"\\])*")|('(?:\\.|[^'\\])*')|(//.*$)|(/\*[\s\S]*?\*/)"#).unwrap()
+        Regex::new(r#"(?m)("(?:\\.|[^"\\])*")|('(?:\\.|[^'\\])*')|(`(?:\\.|[^`\\])*`)|(//.*$)|(/\*[\s\S]*?\*/)"#).unwrap()
     });
     re.replace_all(text, |caps: &regex::Captures| {
         if let Some(m) = caps.get(1) {
             m.as_str().to_string()
         } else if let Some(m) = caps.get(2) {
+            m.as_str().to_string()
+        } else if let Some(m) = caps.get(3) {
             m.as_str().to_string()
         } else {
             String::new()

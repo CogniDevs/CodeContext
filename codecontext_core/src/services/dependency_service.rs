@@ -17,77 +17,98 @@ pub fn trace_dependencies(root_dir: &str, target_rel_path: &str, content: &str) 
     let full_target_path = Path::new(root_dir).join(target_rel_path);
     let target_dir = full_target_path.parent().unwrap_or_else(|| Path::new(root_dir));
 
+    let mut check_and_insert = |path: PathBuf| -> bool {
+        if path.is_file() {
+            if let Ok(rel) = path.strip_prefix(root_dir) {
+                found.insert(rel.to_string_lossy().replace('\\', "/"));
+                return true;
+            }
+        }
+        false
+    };
+
     match ext.as_str() {
         "py" => {
-            if let Ok(re) = Regex::new(r"(?m)^\s*(?:from|import)\s+(\.?\.?[a-zA-Z0-9_.]+)") {
-                for caps in re.captures_iter(content) {
-                    if let Some(mat) = caps.get(1) {
-                        let raw_import = mat.as_str();
-                        let dot_count = raw_import.chars().take_while(|c| *c == '.').count();
-                        let module_part = raw_import.trim_start_matches('.');
+            let import_re = Regex::new(r"(?m)^\s*import\s+([a-zA-Z0-9_.,\s]+)").unwrap();
+            let from_re = Regex::new(r"(?m)^\s*from\s+(\.?\.?[a-zA-Z0-9_.]+)\s+import\s+([a-zA-Z0-9_.,\s()]+)").unwrap();
 
-                        let search_bases: Vec<PathBuf> = if dot_count > 0 {
-                            let mut base = target_dir.to_path_buf();
-                            for _ in 0..(dot_count - 1) {
-                                if let Some(parent) = base.parent() {
-                                    base = parent.to_path_buf();
-                                }
-                            }
-                            vec![base]
-                        } else {
-                            vec![
-                                Path::new(root_dir).to_path_buf(),
-                                Path::new(root_dir).join("src"),
-                                target_dir.to_path_buf(),
-                            ]
-                        };
+            let mut targets = Vec::new();
 
-                        let subpath = module_part.replace('.', "/");
-                        for base in search_bases {
-                            let cand1 = if !subpath.is_empty() {
-                                base.join(format!("{}.py", subpath))
-                            } else {
-                                PathBuf::new()
-                            };
-                            let cand2 = if !subpath.is_empty() {
-                                base.join(&subpath).join("__init__.py")
-                            } else {
-                                base.join("__init__.py")
-                            };
-
-                            if cand1.is_file() {
-                                if let Ok(rel) = cand1.strip_prefix(root_dir) {
-                                    found.insert(rel.to_string_lossy().replace('\\', "/"));
-                                    break;
-                                }
-                            }
-                            if cand2.is_file() {
-                                if let Ok(rel) = cand2.strip_prefix(root_dir) {
-                                    found.insert(rel.to_string_lossy().replace('\\', "/"));
-                                    break;
-                                }
-                            }
+            for caps in import_re.captures_iter(content) {
+                if let Some(mat) = caps.get(1) {
+                    for part in mat.as_str().split(',') {
+                        let clean = part.trim();
+                        if !clean.is_empty() {
+                            targets.push((String::new(), clean.to_string()));
                         }
                     }
                 }
             }
-        }
-        "js" | "jsx" | "ts" | "tsx" => {
-            if let Ok(re) = Regex::new(r#"(?:import\s+.*?\s+from\s+["'](\..*?)["']|require\(["'](\..*?)["']\))"#) {
-                for caps in re.captures_iter(content) {
-                    let rel_import = caps.get(1).or_else(|| caps.get(2)).map(|m| m.as_str()).unwrap_or("");
-                    if rel_import.is_empty() {
-                        continue;
+
+            for caps in from_re.captures_iter(content) {
+                let base = caps.get(1).map_or("", |m| m.as_str()).to_string();
+                if let Some(imports_mat) = caps.get(2) {
+                    let clean_imports = imports_mat.as_str()
+                        .replace('(', "")
+                        .replace(')', "")
+                        .replace('\n', " ")
+                        .replace('\r', " ");
+                    for part in clean_imports.split(',') {
+                        let clean_item = part.trim();
+                        if !clean_item.is_empty() {
+                            targets.push((base.clone(), clean_item.to_string()));
+                        }
                     }
+                }
+            }
 
-                    let abs_base = target_dir.join(rel_import);
-                    let possible_exts = ["", ".js", ".ts", ".jsx", ".tsx", "/index.js", "/index.ts"];
+            for (base, item) in targets {
+                let has_base = !base.is_empty();
+                let full_import_path = if has_base {
+                    format!("{}.{}", base, item)
+                } else {
+                    item.clone()
+                };
 
-                    for p_ext in possible_exts {
-                        let test_path = PathBuf::from(format!("{}{}", abs_base.to_string_lossy(), p_ext));
-                        if test_path.is_file() {
-                            if let Ok(rel) = test_path.strip_prefix(root_dir) {
-                                found.insert(rel.to_string_lossy().replace('\\', "/"));
+                let dot_count = if has_base {
+                    base.chars().take_while(|c| *c == '.').count()
+                } else {
+                    item.chars().take_while(|c| *c == '.').count()
+                };
+
+                let clean_path = full_import_path.trim_start_matches('.');
+                let subpath = clean_path.replace('.', "/");
+
+                let search_bases: Vec<PathBuf> = if dot_count > 0 {
+                    let mut temp_base = target_dir.to_path_buf();
+                    for _ in 0..(dot_count - 1) {
+                        if let Some(parent) = temp_base.parent() {
+                            temp_base = parent.to_path_buf();
+                        }
+                    }
+                    vec![temp_base]
+                } else {
+                    vec![
+                        Path::new(root_dir).to_path_buf(),
+                        Path::new(root_dir).join("src"),
+                        target_dir.to_path_buf(),
+                    ]
+                };
+
+                for base_dir in search_bases {
+                    if !subpath.is_empty() {
+                        let cand1 = base_dir.join(format!("{}.py", subpath));
+                        let cand2 = base_dir.join(&subpath).join("__init__.py");
+                        if check_and_insert(cand1) || check_and_insert(cand2) {
+                            break;
+                        }
+                    }
+                    if has_base {
+                        let base_subpath = base.trim_start_matches('.').replace('.', "/");
+                        if !base_subpath.is_empty() {
+                            let cand1 = base_dir.join(format!("{}.py", base_subpath));
+                            let cand2 = base_dir.join(&base_subpath).join("__init__.py");
+                            if check_and_insert(cand1) || check_and_insert(cand2) {
                                 break;
                             }
                         }
@@ -95,44 +116,95 @@ pub fn trace_dependencies(root_dir: &str, target_rel_path: &str, content: &str) 
                 }
             }
         }
-        "c" | "cpp" | "h" | "hpp" => {
-            if let Ok(re) = Regex::new(r#"(?m)^\s*#include\s+["']([^"']+)["']"#) {
-                for caps in re.captures_iter(content) {
-                    if let Some(mat) = caps.get(1) {
-                        let header = mat.as_str();
-                        let test_path1 = target_dir.join(header);
-                        let test_path2 = Path::new(root_dir).join(header);
+        "js" | "jsx" | "ts" | "tsx" => {
+            let es6_re = Regex::new(r#"(?s)\bimport\s+[^"']*?\s+from\s+["'](\..*?)["']"#).unwrap();
+            let dynamic_re = Regex::new(r#"\bimport\(\s*["'](\..*?)["']\s*\)"#).unwrap();
+            let require_re = Regex::new(r#"\brequire\(\s*["'](\..*?)["']\s*\)"#).unwrap();
 
-                        if test_path1.is_file() {
-                            if let Ok(rel) = test_path1.strip_prefix(root_dir) {
-                                found.insert(rel.to_string_lossy().replace('\\', "/"));
-                            }
-                        } else if test_path2.is_file() {
-                            if let Ok(rel) = test_path2.strip_prefix(root_dir) {
-                                found.insert(rel.to_string_lossy().replace('\\', "/"));
-                            }
-                        }
+            let mut imports = Vec::new();
+            for caps in es6_re.captures_iter(content) {
+                if let Some(m) = caps.get(1) {
+                    imports.push(m.as_str());
+                }
+            }
+            for caps in dynamic_re.captures_iter(content) {
+                if let Some(m) = caps.get(1) {
+                    imports.push(m.as_str());
+                }
+            }
+            for caps in require_re.captures_iter(content) {
+                if let Some(m) = caps.get(1) {
+                    imports.push(m.as_str());
+                }
+            }
+
+            for rel_import in imports {
+                let abs_base = target_dir.join(rel_import);
+                let possible_exts = ["", ".js", ".ts", ".jsx", ".tsx", "/index.js", "/index.ts"];
+
+                for p_ext in possible_exts {
+                    let test_path = PathBuf::from(format!("{}{}", abs_base.to_string_lossy(), p_ext));
+                    if check_and_insert(test_path) {
+                        break;
+                    }
+                }
+            }
+        }
+        "c" | "cpp" | "h" | "hpp" => {
+            let include_re = Regex::new(r#"(?m)^\s*#include\s+["']([^"']+)["']"#).unwrap();
+            for caps in include_re.captures_iter(content) {
+                if let Some(mat) = caps.get(1) {
+                    let header = mat.as_str();
+                    let test_path1 = target_dir.join(header);
+                    let test_path2 = Path::new(root_dir).join(header);
+
+                    if !check_and_insert(test_path1) {
+                        check_and_insert(test_path2);
                     }
                 }
             }
         }
         "rs" => {
-            if let Ok(re) = Regex::new(r"(?m)^\s*(?:pub\s+)?mod\s+([a-zA-Z0-9_]+);") {
-                for caps in re.captures_iter(content) {
-                    if let Some(mat) = caps.get(1) {
-                        let mod_name = mat.as_str();
-                        let cand1 = target_dir.join(format!("{}.rs", mod_name));
-                        let cand2 = target_dir.join(mod_name).join("mod.rs");
+            let mod_re = Regex::new(r"(?m)^\s*(?:pub\s+)?mod\s+([a-zA-Z0-9_]+);").unwrap();
+            let use_re = Regex::new(r#"(?m)^\s*(?:pub\s+)?use\s+(crate|super|self)::([a-zA-Z0-9_:]+)"#).unwrap();
 
-                        if cand1.is_file() {
-                            if let Ok(rel) = cand1.strip_prefix(root_dir) {
-                                found.insert(rel.to_string_lossy().replace('\\', "/"));
-                            }
-                        } else if cand2.is_file() {
-                            if let Ok(rel) = cand2.strip_prefix(root_dir) {
-                                found.insert(rel.to_string_lossy().replace('\\', "/"));
+            for caps in mod_re.captures_iter(content) {
+                if let Some(mat) = caps.get(1) {
+                    let mod_name = mat.as_str();
+                    let cand1 = target_dir.join(format!("{}.rs", mod_name));
+                    let cand2 = target_dir.join(mod_name).join("mod.rs");
+
+                    if !check_and_insert(cand1) {
+                        check_and_insert(cand2);
+                    }
+                }
+            }
+
+            for caps in use_re.captures_iter(content) {
+                let base_type = caps.get(1).map_or("", |m| m.as_str());
+                if let Some(path_mat) = caps.get(2) {
+                    let raw_path = path_mat.as_str();
+                    let subpath = raw_path.replace("::", "/");
+
+                    let base_dir = match base_type {
+                        "crate" => {
+                            let src_dir = Path::new(root_dir).join("src");
+                            if src_dir.is_dir() {
+                                src_dir
+                            } else {
+                                Path::new(root_dir).to_path_buf()
                             }
                         }
+                        "super" => target_dir.parent().unwrap_or(target_dir).to_path_buf(),
+                        _ => target_dir.to_path_buf(),
+                    };
+
+                    let cand1 = base_dir.join(format!("{}.rs", subpath));
+                    let cand2 = base_dir.join(&subpath).join("mod.rs");
+                    let cand3 = base_dir.join(format!("{}/mod.rs", subpath));
+
+                    if !check_and_insert(cand1) && !check_and_insert(cand2) {
+                        check_and_insert(cand3);
                     }
                 }
             }
