@@ -1,8 +1,12 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QCheckBox, QGroupBox, QTextEdit
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, QCheckBox, QGroupBox, QTextEdit
 from PyQt6.QtCore import pyqtSignal
 
+
 class ControlPanel(QWidget):
+    prompt_changed = pyqtSignal()
     settings_changed = pyqtSignal()
+    add_prompt_clicked = pyqtSignal()
+    edit_prompt_clicked = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -12,8 +16,23 @@ class ControlPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        ai_group = QGroupBox("Параметры контекста и обработки")
+        ai_group = QGroupBox("Параметры контекста и ИИ")
         ai_layout = QVBoxLayout(ai_group)
+
+        prompt_selector_layout = QHBoxLayout()
+        prompt_selector_layout.addWidget(QLabel("Шаблон задачи (Скилл):"))
+        self.combo_prompts = QComboBox()
+        self.combo_prompts.currentTextChanged.connect(lambda: self.prompt_changed.emit())
+        prompt_selector_layout.addWidget(self.combo_prompts, 1)
+
+        btn_add_prompt = QPushButton("➕ Добавить")
+        btn_add_prompt.clicked.connect(self.add_prompt_clicked.emit)
+        prompt_selector_layout.addWidget(btn_add_prompt)
+
+        btn_edit_prompt = QPushButton("⚙ Изменить")
+        btn_edit_prompt.clicked.connect(self.edit_prompt_clicked.emit)
+        prompt_selector_layout.addWidget(btn_edit_prompt)
+        ai_layout.addLayout(prompt_selector_layout)
 
         toggles_layout_1 = QHBoxLayout()
         self.chk_xml = QCheckBox("Формат XML")
@@ -48,6 +67,20 @@ class ControlPanel(QWidget):
 
         layout.addWidget(log_group, 1)
 
+    def populate_prompts(self, prompts_dict: dict, last_prompt_key: str):
+        self.combo_prompts.blockSignals(True)
+        self.combo_prompts.clear()
+        for key, value in prompts_dict.items():
+            self.combo_prompts.addItem(value["title"], key)
+
+        index = self.combo_prompts.findData(last_prompt_key)
+        if index >= 0:
+            self.combo_prompts.setCurrentIndex(index)
+        self.combo_prompts.blockSignals(False)
+
+    def get_current_prompt_key(self) -> str:
+        return self.combo_prompts.currentData()
+
     def get_settings(self) -> tuple:
         return (
             self.chk_xml.isChecked(),
@@ -58,3 +91,6 @@ class ControlPanel(QWidget):
 
     def append_log(self, text: str):
         self.log_output.append(text)
+
+    def clear_log(self):
+        self.log_output.clear()

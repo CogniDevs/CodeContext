@@ -1,9 +1,12 @@
+import os
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTreeWidget, QTreeWidgetItem, QHeaderView, QStyle
 from PyQt6.QtCore import Qt, pyqtSignal
+
 
 class TreePanel(QWidget):
     selection_changed = pyqtSignal()
     refresh_requested = pyqtSignal()
+    log_message = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -23,6 +26,13 @@ class TreePanel(QWidget):
         btn_uncheck_all = QPushButton("Снять выделение")
         btn_uncheck_all.clicked.connect(lambda: self.check_all_items(False))
         toolbar.addWidget(btn_uncheck_all)
+
+        btn_git_select = QPushButton("Только Git")
+        toolbar.addWidget(btn_git_select)
+
+        btn_deps_select = QPushButton("Импорты")
+        btn_deps_select.setToolTip("Выделить все импортируемые файлы для выбранного")
+        toolbar.addWidget(btn_deps_select)
 
         btn_expand = QPushButton("Развернуть")
         btn_expand.clicked.connect(lambda: self.tree_widget.expandAll())
@@ -105,6 +115,22 @@ class TreePanel(QWidget):
 
         self._update_parent_state(parent)
 
+    def get_check_states(self) -> dict:
+        states = {}
+        if self.tree_widget.topLevelItemCount() == 0:
+            return states
+        root_item = self.tree_widget.topLevelItem(0)
+        self._collect_states(root_item, states)
+        return states
+
+    def _collect_states(self, item, states: dict):
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        if data:
+            rel_path = data.get('rel_path', '')
+            states[rel_path] = item.checkState(0)
+        for i in range(item.childCount()):
+            self._collect_states(item.child(i), states)
+
     def get_selected_files_info(self, item=None) -> list:
         if item is None:
             if self.tree_widget.topLevelItemCount() == 0:
@@ -126,7 +152,16 @@ class TreePanel(QWidget):
 
         return files
 
-    def populate_tree(self, root_node_dict: dict):
+    def get_current_focused_rel_path(self) -> str:
+        current_item = self.tree_widget.currentItem()
+        if not current_item:
+            return ""
+        data = current_item.data(0, Qt.ItemDataRole.UserRole)
+        if data and not data.get('is_dir', False):
+            return data.get('rel_path', '')
+        return ""
+
+    def populate_tree(self, root_node_dict: dict, saved_states: dict = None):
         self.tree_widget.blockSignals(True)
         self.tree_widget.clear()
         if not root_node_dict:
@@ -136,7 +171,12 @@ class TreePanel(QWidget):
         root_item = QTreeWidgetItem(self.tree_widget)
         root_item.setText(0, root_node_dict.get('name', 'project'))
         root_item.setIcon(0, self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
-        root_item.setCheckState(0, Qt.CheckState.Checked)
+
+        root_state = Qt.CheckState.Checked
+        if saved_states and root_node_dict.get('rel_path', '') in saved_states:
+            root_state = saved_states[root_node_dict.get('rel_path', '')]
+        root_item.setCheckState(0, root_state)
+
         root_item.setData(0, Qt.ItemDataRole.UserRole, {
             'full_path': root_node_dict.get('full_path', ''),
             'rel_path': root_node_dict.get('rel_path', ''),
@@ -144,20 +184,30 @@ class TreePanel(QWidget):
             'size': 0
         })
 
-        self._populate_ui_tree(root_item, root_node_dict.get('children', []))
+        self._populate_ui_tree(root_item, root_node_dict.get('children', []), saved_states)
         root_item.setExpanded(True)
         self.tree_widget.blockSignals(False)
 
-    def _populate_ui_tree(self, parent_item, children_list: list):
+        if self.search_input.text().strip():
+            self.filter_tree(self.search_input.text())
+
+    def _populate_ui_tree(self, parent_item, children_list: list, saved_states: dict = None):
+        if saved_states is None:
+            saved_states = {}
+
         for child in children_list:
             item = QTreeWidgetItem(parent_item)
             item.setText(0, child.get('name', ''))
-            item.setCheckState(0, Qt.CheckState.Checked)
+
+            state = Qt.CheckState.Checked
+            if child.get('rel_path', '') in saved_states:
+                state = saved_states[child.get('rel_path', '')]
+            item.setCheckState(0, state)
 
             is_dir = child.get('is_dir', False)
             if is_dir:
                 item.setIcon(0, self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
-                self._populate_ui_tree(item, child.get('children', []))
+                self._populate_ui_tree(item, child.get('children', []), saved_states)
             else:
                 size_bytes = child.get('size', 0)
                 kb_size = round(size_bytes / 1024, 1)
@@ -197,3 +247,26 @@ class TreePanel(QWidget):
             item.setExpanded(True)
 
         return is_visible
+
+    def select_specific_paths(self, target_paths: set):
+        if not target_paths or self.tree_widget.topLevelItemCount() == 0:
+            return
+
+        self.tree_widget.blockSignals(True)
+        root_item = self.tree_widget.topLevelItem(0)
+        self._check_paths_recursive(root_item, target_paths)
+        self.tree_widget.blockSignals(False)
+        self.selection_changed.emit()
+
+    def _check_paths_recursive(self, item, target_paths: set):
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        if data:
+            rel_path = data.get('rel_path', '')
+            is_dir = data.get('is_dir', False)
+
+            if not is_dir and rel_path in target_paths:
+                item.setCheckState(0, Qt.CheckState.Checked)
+                self._update_parent_state(item)
+
+        for i in range(item.childCount()):
+            self._check_paths_recursive(item.child(i), target_paths)

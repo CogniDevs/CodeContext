@@ -4,83 +4,32 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
 
 from config.config_manager import ConfigManager
+from config.prompt_manager import PromptManager
 from ui.widgets.paths_panel import PathsPanel
 from ui.widgets.tree_panel import TreePanel
 from ui.widgets.control_panel import ControlPanel
 from ui.widgets.bottom_panel import BottomPanel
 from ui.controller import PackerController
-
-DARK_STYLESHEET = """
-QMainWindow, QWidget { 
-    background-color: #1e1e1e; 
-    color: #d4d4d4; 
-}
-QGroupBox { 
-    border: 1px solid #3c3c3c; 
-    border-radius: 6px; 
-    margin-top: 10px; 
-    padding: 10px; 
-    font-weight: bold; 
-}
-QGroupBox::title { 
-    subcontrol-origin: margin; 
-    left: 8px; 
-    padding: 0 3px; 
-}
-QPushButton { 
-    background-color: #0e639c; 
-    color: #ffffff; 
-    border: none; 
-    padding: 6px 12px; 
-    border-radius: 4px; 
-    font-weight: bold; 
-    font-size: 11px; 
-}
-QPushButton:hover { 
-    background-color: #1177bb; 
-}
-QPushButton:disabled { 
-    background-color: #3c3c3c; 
-    color: #7f7f7f; 
-}
-QLineEdit, QTextEdit { 
-    background-color: #252526; 
-    border: 1px solid #3c3c3c; 
-    border-radius: 4px; 
-    color: #d4d4d4; 
-    padding: 5px; 
-}
-QTreeWidget { 
-    background-color: #252526; 
-    border: 1px solid #3c3c3c; 
-    color: #d4d4d4; 
-}
-QHeaderView::section { 
-    background-color: #2d2d2d; 
-    color: #d4d4d4; 
-    border: 1px solid #3c3c3c; 
-    padding: 4px; 
-}
-QStatusBar { 
-    background-color: #0e639c; 
-    color: #ffffff; 
-}
-"""
+from ui.settings_dialog import SettingsDialog
+from ui.style import get_stylesheet, DARK_PALETTE, LIGHT_PALETTE
+from core.updater import CURRENT_VERSION
 
 
 class CodeContextApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("CodeContext Desktop (Powered by Rust Engine)")
+        self.setWindowTitle(f"CodeContext Desktop (Powered by Rust Engine) — {CURRENT_VERSION}")
         self.resize(1100, 700)
-        self.setStyleSheet(DARK_STYLESHEET)
         self.setAcceptDrops(True)
 
         self.config_manager = ConfigManager()
+        self.prompt_manager = PromptManager(self.config_manager.config_dir, self.config_manager)
         self.root_dir = ""
 
+        self.update_application_theme()
         self.init_ui()
-        self.controller = PackerController(self, self.config_manager)
+
+        self.controller = PackerController(self, self.config_manager, self.prompt_manager)
 
     def init_ui(self):
         main_widget = QWidget()
@@ -120,22 +69,88 @@ class CodeContextApp(QMainWindow):
         act_open.triggered.connect(self.paths_panel.browse_directory)
         file_menu.addAction(act_open)
 
+        act_save_path = QAction("Выбрать файл сохранения...", self)
+        act_save_path.triggered.connect(self.paths_panel.browse_output_file)
+        file_menu.addAction(act_save_path)
+
+        file_menu.addSeparator()
+
         act_exit = QAction("Выход", self)
         act_exit.triggered.connect(self.close)
         file_menu.addAction(act_exit)
 
+        settings_menu = menu_bar.addMenu("Настройки")
+
+        act_pref = QAction("⚙ Параметры...", self)
+        act_pref.setShortcut("Ctrl+P")
+        act_pref.triggered.connect(self.open_settings_dialog)
+        settings_menu.addAction(act_pref)
+
         help_menu = menu_bar.addMenu("Справка")
+
+        act_check = QAction("Проверить обновления...", self)
+        act_check.triggered.connect(self.check_for_updates_manual)
+        help_menu.addAction(act_check)
+
         act_about = QAction("О программе", self)
         act_about.triggered.connect(self.show_about_dialog)
         help_menu.addAction(act_about)
+
+    def create_new_prompt(self):
+        import time
+        from ui.prompt_edit_dialog import PromptCreateDialog
+
+        dialog = PromptCreateDialog(self.prompt_manager, self)
+        if dialog.exec() == PromptCreateDialog.DialogCode.Accepted:
+            data = dialog.get_data()
+            new_key = f"user_prompt_{int(time.time())}"
+            self.prompt_manager.prompts[new_key] = data
+            self.prompt_manager.save_prompts()
+            self.control_panel.append_log(f"Создан новый скилл '{data['title']}'.")
+            self.config_manager.set("last_prompt_key", new_key)
+            self.control_panel.populate_prompts(self.prompt_manager.prompts, new_key)
+
+    def edit_current_prompt(self):
+        current_key = self.control_panel.get_current_prompt_key()
+        if not current_key:
+            return
+
+        prompt_data = self.prompt_manager.prompts.get(current_key)
+        if not prompt_data:
+            return
+
+        from ui.prompt_edit_dialog import PromptEditDialog
+
+        dialog = PromptEditDialog(prompt_data.get("title", ""), prompt_data.get("prompt", ""), self)
+        if dialog.exec() == PromptEditDialog.DialogCode.Accepted:
+            new_text = dialog.get_text()
+            self.prompt_manager.update_prompt(current_key, new_text)
+            self.control_panel.append_log(f"Шаблон '{prompt_data['title']}' успешно обновлен.")
+            self.controller.reload_tree()
+
+    def open_settings_dialog(self):
+        dialog = SettingsDialog(self.config_manager, self)
+        if dialog.exec() == SettingsDialog.DialogCode.Accepted:
+            self.update_application_theme()
+            self.controller.reload_tree()
+
+    def check_for_updates_manual(self):
+        self.controller.check_for_updates(silent=False)
+
+    def update_application_theme(self):
+        theme = self.config_manager.get("theme", "Темная (VS Code)")
+        if "Темная" in theme:
+            self.setStyleSheet(get_stylesheet(DARK_PALETTE))
+        else:
+            self.setStyleSheet(get_stylesheet(LIGHT_PALETTE))
 
     def show_about_dialog(self):
         QMessageBox.about(
             self,
             "О программе CodeContext",
-            "<b>CodeContext Desktop v0.1.0</b><br><br>"
+            f"<b>CodeContext Desktop {CURRENT_VERSION}</b><br><br>"
             "Единая система подготовки и упаковки контекста исходного кода для LLM.<br>"
-            "Ядро сканирования и трансформеры работают на <b>Rust</b>.<br><br>"
+            "Ядро сканирования и трансформеры работают на <b>Rust Engine</b>.<br><br>"
             "Разработано в <b>CogniDevs</b>."
         )
 
@@ -149,3 +164,8 @@ class CodeContextApp(QMainWindow):
             if os.path.isdir(path):
                 self.paths_panel.set_project_dir(os.path.abspath(path))
                 break
+
+    def closeEvent(self, event):
+        if hasattr(self, 'controller') and hasattr(self.controller, 'watcher'):
+            self.controller.watcher.stop_watching()
+        event.accept()
