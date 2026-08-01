@@ -10,6 +10,7 @@
   },
   "private": true,
   "dependencies": {
+    "codecontext_core": "file:../codecontext_core/pkg",
     "@angular/common": "^19.2.0",
     "@angular/compiler": "^19.2.0",
     "@angular/core": "^19.2.0",

@@ -1,0 +1,81 @@
+<div class="control-panel-container">
+  <div class="panel-section">
+    <h3>Параметры контекста и ИИ</h3>
+
+    <div class="form-group">
+      <label class="form-label">Шаблон задачи (Скилл ИИ):</label>
+      <select
+        class="form-control"
+        [ngModel]="selectedPromptKey"
+        (ngModelChange)="onPromptChange($event)"
+      >
+        @for (preset of promptPresets; track preset.key) {
+          <option [value]="preset.key">{{ preset.title }}</option>
+        }
+      </select>
+    </div>
+
+    <div class="toggles-grid">
+      <label class="checkbox-label">
+        <input
+          type="checkbox"
+          [ngModel]="stateService.transformOptions().xml_format"
+          (ngModelChange)="updateOption('xml_format', $event)"
+        />
+        <span>Формат XML</span>
+      </label>
+
+      <label class="checkbox-label">
+        <input
+          type="checkbox"
+          [ngModel]="stateService.transformOptions().strip_comments"
+          (ngModelChange)="updateOption('strip_comments', $event)"
+        />
+        <span>Без комментариев</span>
+      </label>
+
+      <label class="checkbox-label">
+        <input
+          type="checkbox"
+          [ngModel]="stateService.transformOptions().compress_whitespace"
+          (ngModelChange)="updateOption('compress_whitespace', $event)"
+        />
+        <span>Сжать код</span>
+      </label>
+
+      <label class="checkbox-label">
+        <input
+          type="checkbox"
+          [ngModel]="stateService.transformOptions().sanitize_secrets"
+          (ngModelChange)="updateOption('sanitize_secrets', $event)"
+        />
+        <span>Скрыть секреты</span>
+      </label>
+
+      <label class="checkbox-label">
+        <input
+          type="checkbox"
+          [ngModel]="stateService.transformOptions().skeleton_mode"
+          (ngModelChange)="updateOption('skeleton_mode', $event)"
+        />
+        <span>Скелет (сигнатуры)</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="preview-section">
+    <div class="preview-header">
+      <h3>Превью сгенерированного контекста</h3>
+      @if (stateService.isGenerating()) {
+        <span class="badge">Генерация...</span>
+      }
+    </div>
+
+    <textarea
+      class="form-control preview-textarea text-mono"
+      readonly
+      [value]="stateService.generatedPayload()"
+      placeholder="Скомпилированный контекст проекта появится здесь после выбора файлов..."
+    ></textarea>
+  </div>
+</div>

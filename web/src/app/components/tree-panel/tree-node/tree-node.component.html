@@ -1,0 +1,36 @@
+@if (shouldShowNode(node)) {
+  <div class="tree-node">
+    <div class="node-row" [style.paddingLeft.px]="depth * 16">
+      @if (node.is_dir) {
+        <button class="btn-toggle" (click)="isExpanded = !isExpanded">
+          <span class="arrow" [class.expanded]="isExpanded">▶</span>
+        </button>
+        <span class="icon icon-folder"></span>
+      } @else {
+        <span class="spacer"></span>
+        <span class="icon icon-file"></span>
+      }
+
+      <input
+        type="checkbox"
+        class="checkbox"
+        [checked]="isSelected(node)"
+        (change)="onCheckboxChange($event, node)"
+      />
+
+      <span class="node-name" [class.is-dir]="node.is_dir">{{ node.name }}</span>
+
+      @if (!node.is_dir) {
+        <span class="node-size text-muted">{{ formatSize(node.size) }}</span>
+      }
+    </div>
+
+    @if (node.is_dir && isExpanded) {
+      <div class="children">
+        @for (child of node.children; track child.full_path) {
+          <app-tree-node [node]="child" [depth]="depth + 1" [searchQuery]="searchQuery" />
+        }
+      </div>
+    }
+  </div>
+}

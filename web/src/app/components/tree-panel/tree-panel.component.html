@@ -1,0 +1,34 @@
+<div class="tree-panel-container">
+  <div class="panel-section">
+    <div class="panel-header">
+      <h3>Структура для экспорта</h3>
+      <div class="actions-row">
+        <button class="btn btn-secondary btn-sm" (click)="selectAll(true)">Выделить всё</button>
+        <button class="btn btn-secondary btn-sm" (click)="selectAll(false)">Снять выделение</button>
+      </div>
+    </div>
+
+    <input
+      type="text"
+      class="form-control search-input"
+      placeholder="Поиск файлов по имени или расширению..."
+      [(ngModel)]="searchQuery"
+    />
+  </div>
+
+  <div class="tree-content">
+    @if (fileSystemService.isScanning()) {
+      <div class="tree-state-msg">
+        <span class="spinner"></span>
+        <span>Сканирование проекта...</span>
+      </div>
+    } @else if (fileSystemService.rootNode(); as root) {
+      <app-tree-node [node]="root" [searchQuery]="searchQuery" />
+    } @else {
+      <div class="tree-state-msg text-muted">
+        <p>Проект не выбран.</p>
+        <p class="sub">Нажмите «Открыть проект» в шапке или перетащите папку сюда.</p>
+      </div>
+    }
+  </div>
+</div>

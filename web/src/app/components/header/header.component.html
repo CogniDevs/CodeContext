@@ -1,0 +1,44 @@
+<header class="app-header">
+  <div class="header-brand">
+    <span class="icon icon-app app-logo"></span>
+    <span class="logo">CodeContext</span>
+    <span class="badge badge-primary">WASM Web</span>
+
+    @if (fileSystemService.currentProjectName()) {
+      <div class="project-badge">
+        <span class="icon icon-folder"></span>
+        <span class="project-name">{{ fileSystemService.currentProjectName() }}</span>
+      </div>
+    }
+  </div>
+
+  <div class="header-actions">
+    <button class="btn" (click)="onOpenDirectory()">
+      <span class="icon icon-folder-open"></span>
+      <span>Открыть проект</span>
+    </button>
+
+    <label class="btn btn-secondary fallback-upload">
+      <span class="icon icon-file-search"></span>
+      <span>Обзор...</span>
+      <input
+        type="file"
+        webkitdirectory
+        directory
+        multiple
+        class="hidden-input"
+        (change)="onFileInputChange($event)"
+      />
+    </label>
+
+    <button class="btn btn-secondary theme-toggle" (click)="toggleTheme()">
+      @if (themeService.currentTheme() === 'dark') {
+        <span class="icon icon-sun"></span>
+        <span>Светлая</span>
+      } @else {
+        <span class="icon icon-moon"></span>
+        <span>Темная</span>
+      }
+    </button>
+  </div>
+</header>

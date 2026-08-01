@@ -1,0 +1,27 @@
+.app-footer {
+  height: 42px;
+  min-height: 42px;
+  background-color: var(--bg-header);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  font-size: 12px;
+}
+
+.stats-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  .separator {
+    color: var(--border-color);
+  }
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

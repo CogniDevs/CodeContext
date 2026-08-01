@@ -1,0 +1,33 @@
+<footer class="app-footer">
+  <div class="stats-info">
+    <span class="stat-item">
+      Выбрано файлов: <strong>{{ stateService.selectedFilesCount() }}</strong>
+    </span>
+    <span class="separator">|</span>
+    <span class="stat-item">
+      Размер: <strong>{{ stateService.totalSizeKb() }} KB</strong>
+    </span>
+    <span class="separator">|</span>
+    <span class="stat-item">
+      Токены (Rust/Tiktoken): <strong>~{{ stateService.tokenCount() }}</strong>
+    </span>
+  </div>
+
+  <div class="actions">
+    <button
+      class="btn"
+      [disabled]="!stateService.generatedPayload()"
+      (click)="copyToClipboard()"
+    >
+      {{ copyStatus() }}
+    </button>
+
+    <button
+      class="btn btn-secondary"
+      [disabled]="!stateService.generatedPayload()"
+      (click)="downloadTxt()"
+    >
+      Записать в TXT
+    </button>
+  </div>
+</footer>
