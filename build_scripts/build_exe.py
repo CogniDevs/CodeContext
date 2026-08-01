@@ -17,9 +17,14 @@ def build():
     icon_png = os.path.join(resources_src, "icons", "icon.png")
 
     print("--- 1. Compiling Rust core (codecontext_core) ---")
+    env = os.environ.copy()
+    if sys.platform == "darwin":
+        env["RUSTFLAGS"] = "-C link-arg=-undefined -C link-arg=dynamic_lookup"
+
     res = subprocess.run(
         ["cargo", "build", "--release", "--features", "python"],
         cwd=core_dir,
+        env=env,
         shell=(sys.platform == "win32")
     )
     if res.returncode != 0:
