@@ -1,0 +1,71 @@
+name: Build and Release Desktop Application
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset_name: CodeContext_Windows.exe
+            output_file: dist/CodeContext.exe
+          - os: ubuntu-latest
+            asset_name: CodeContext_Linux.tar.gz
+            output_file: CodeContext_Linux.tar.gz
+          - os: macos-latest
+            asset_name: CodeContext_macOS.zip
+            output_file: CodeContext_macOS.zip
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller -r desktop/requirements.txt
+
+      - name: Run build script
+        run: |
+          python build_scripts/build_exe.py
+
+      - name: Package Linux artifact
+        if: runner.os == 'Linux'
+        run: |
+          tar -czvf CodeContext_Linux.tar.gz -C dist CodeContext
+
+      - name: Package macOS artifact
+        if: runner.os == 'macOS'
+        run: |
+          cd dist
+          zip -r ../CodeContext_macOS.zip CodeContext.app
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: ${{ matrix.output_file }}
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.output_file }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
