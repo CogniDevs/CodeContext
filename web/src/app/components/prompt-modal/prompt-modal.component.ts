@@ -1,4 +1,4 @@
-import { Component, signal, output } from '@angular/core';
+import { Component, signal, output, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
@@ -10,59 +10,6 @@ interface RuleItem {
   active: boolean;
 }
 
-const DEFAULT_RULES: Record<string, RuleItem[]> = {
-  system_role: [
-    {
-      id: 'role_architect',
-      title: 'Ведущий системный архитектор (Principal Architect)',
-      description: 'Позиционирует ИИ как высококлассного системного архитектора с фокусом на чистый разделенный дизайн.',
-      rule_text: 'You are a Principal Software Architect and Systems Synthesizer with expertise in modular design, clean code metrics, and structural decoupling.',
-      active: true
-    },
-    {
-      id: 'role_security',
-      title: 'Специалист по информационной безопасности',
-      description: 'Настраивает ИИ на глубокий поиск логических уязвимостей, утечек памяти и векторов атак.',
-      rule_text: 'You are an Elite Security Researcher, Forensic Debugger, and QA Engineer specializing in threat modeling, boundary verification, and locating logical security exploits.',
-      active: false
-    }
-  ],
-  interaction_protocol: [
-    {
-      id: 'protocol_architect_mode',
-      title: 'Сначала план (Architect Mode)',
-      description: 'Категорически запрещает ИИ писать код на первом шаге. Обязывает составить правила самоконтроля, план и ждать одобрения.',
-      rule_text: 'Do NOT generate any code blocks or file modifications in your first response. First, output a <self_rules> block defining your operational guidelines based on the tech stack, followed by an <analysis_and_plan> block tracing entry points and outlining a step-by-step roadmap. End with an explicit checkpoint waiting for the user to approve Phase 1 before coding.',
-      active: true
-    },
-    {
-      id: 'protocol_step_by_step',
-      title: 'Пошаговая сверка изменений',
-      description: 'Обязывает ИИ выводить код строго по одной логической части за раз и ждать подтверждения.',
-      rule_text: 'Provide code modifications strictly one logical module or file at a time. After writing code for a step, halt immediately and ask the user to verify the changes and run tests before moving to the next phase in the plan.',
-      active: true
-    }
-  ],
-  quality_standards: [
-    {
-      id: 'quality_no_placeholders',
-      title: 'Строгий запрет заглушек (No Placeholders)',
-      description: 'Запрещает ИИ писать неполный код с комментариями вида "// ... остальной код без изменений".',
-      rule_text: 'Do not write code blocks containing placeholder comments like \'// ... rest of code\' or \'// TODO: keep original logic\'. All generated code must be complete, syntactically valid, and ready to compile.',
-      active: true
-    }
-  ],
-  version_alignment: [
-    {
-      id: 'version_live_sync',
-      title: 'Живая синхронизация версий (Live-Version Shield)',
-      description: 'Обязывает ИИ прочитать версии из манифестов и использовать актуальный синтаксис.',
-      rule_text: 'First, scan dependency manifests (e.g., requirements.txt, package.json, go.mod, Cargo.toml) in the repository to identify active library versions. Align modern API syntaxes with active versions.',
-      active: true
-    }
-  ]
-};
-
 @Component({
   selector: 'app-prompt-modal',
   standalone: true,
@@ -70,7 +17,7 @@ const DEFAULT_RULES: Record<string, RuleItem[]> = {
   templateUrl: './prompt-modal.component.html',
   styleUrl: './prompt-modal.component.scss'
 })
-export class PromptModalComponent {
+export class PromptModalComponent implements OnInit {
   readonly isOpen = signal<boolean>(false);
   readonly promptSaved = output<{ key: string; title: string; prompt: string }>();
 
@@ -86,7 +33,25 @@ export class PromptModalComponent {
     { key: 'version_alignment', title: 'Синхронизация версий' }
   ];
   activeCategory = 'system_role';
-  rulesData: Record<string, RuleItem[]> = JSON.parse(JSON.stringify(DEFAULT_RULES));
+  rulesData: Record<string, RuleItem[]> = {};
+  defaultRulesResource: Record<string, RuleItem[]> = {};
+
+  async ngOnInit(): Promise<void> {
+    await this.loadDefaultRules();
+  }
+
+  private async loadDefaultRules(): Promise<void> {
+    try {
+      const res = await fetch('assets/resources/default_rules.json');
+      if (res.ok) {
+        const data = await res.json();
+        this.defaultRulesResource = data;
+        this.rulesData = JSON.parse(JSON.stringify(data));
+      }
+    } catch {
+
+    }
+  }
 
   openEdit(key: string, title: string, promptText: string): void {
     this.mode = 'edit';
@@ -101,7 +66,9 @@ export class PromptModalComponent {
     this.promptKey = `custom_${Date.now()}`;
     this.titleInput = '';
     this.promptTextInput = '';
-    this.rulesData = JSON.parse(JSON.stringify(DEFAULT_RULES));
+    if (Object.keys(this.defaultRulesResource).length > 0) {
+      this.rulesData = JSON.parse(JSON.stringify(this.defaultRulesResource));
+    }
     this.isOpen.set(true);
   }
 

@@ -5,36 +5,7 @@ import { FileSystemService, FileNode } from './file-system.service';
 const STORAGE_KEY_SCAN = 'codecontext_scan_options';
 const STORAGE_KEY_TRANSFORM = 'codecontext_transform_options';
 
-const DEFAULT_COMMENT_RULES_JSON = JSON.stringify({
-  rules: {
-    c_style: {
-      extensions: [
-        '.js', '.jsx', '.ts', '.tsx', '.c', '.cpp', '.h', '.hpp', '.go', '.rs',
-        '.java', '.cs', '.php', '.css', '.scss', '.dart', '.kt', '.kts'
-      ],
-      pattern: '("(?:\\\\.|[^"\\\\])*")|(\'(?:\\\\.|[^\'\\\\])*\')|(`(?:\\\\.|[^`\\\\])*`)|(//.*?$)|(/\\*[\\s\\S]*?\\*/)'
-    },
-    python_style: {
-      extensions: ['.py', '.ipynb'],
-      hash_pattern: '("(?:\\\\.|[^"\\\\])*")|(\'(?:\\\\.|[^\'\\\\])*\')|(#.*?$)',
-      docstring_pattern: '^\\s*("""[\\s\\S]*?"""|\'\'\'[\\s\\S]*?\'\'\')\\s*$'
-    },
-    xml_style: {
-      extensions: ['.html', '.xml', '.svelte', '.vue', '.astro', '.svg'],
-      pattern: '("(?:\\\\.|[^"\\\\])*")|(\'(?:\\\\.|[^\'\\\\])*\')|(<!--[\\s\\S]*?-->)'
-    },
-    hash_style: {
-      extensions: ['.sh', '.bash', '.yaml', '.yml', '.toml', '.ini', 'makefile', 'dockerfile', '.rb'],
-      pattern: '("(?:\\\\.|[^"\\\\])*")|(\'(?:\\\\.|[^\'\\\\])*\')|(#.*?$)'
-    },
-    sql_style: {
-      extensions: ['.sql'],
-      pattern: '("(?:\\\\.|[^"\\\\])*")|(\'(?:\\\\.|[^\'\\\\])*\')|(--.*?$)|(/\\*[\\s\\S]*?\\*/)'
-    }
-  }
-});
-
-const DEFAULT_SCAN_OPTIONS: ScanOptionsWasm = {
+const FALLBACK_SCAN_OPTIONS: ScanOptionsWasm = {
   use_gitignore: true,
   ignore_binary: true,
   ignore_lockfiles: true,
@@ -54,11 +25,11 @@ const DEFAULT_SCAN_OPTIONS: ScanOptionsWasm = {
     '.vscode'
   ],
   gitignore_disabled_rules: [],
-  binary_extensions: ['.png', '.jpg', '.jpeg', '.gif', '.ico', '.pdf', '.zip', '.exe', '.dll', '.so', '.dylib', '.wasm'],
+  binary_extensions: ['.png', '.jpg', '.jpeg', '.gif', '.ico', '.pdf', '.zip', '.exe', '.dll', '.so', '.dylib', '.wasm', '.svg'],
   lockfiles_excludes: ['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'Cargo.lock', 'go.sum']
 };
 
-const DEFAULT_TRANSFORM_OPTIONS: TransformOptionsWasm = {
+const FALLBACK_TRANSFORM_OPTIONS: TransformOptionsWasm = {
   strip_comments: false,
   compress_whitespace: false,
   sanitize_secrets: false,
@@ -66,7 +37,7 @@ const DEFAULT_TRANSFORM_OPTIONS: TransformOptionsWasm = {
   xml_format: true,
   always_send_full_tree: true,
   system_prompt: '',
-  comment_rules_json: DEFAULT_COMMENT_RULES_JSON
+  comment_rules_json: null
 };
 
 @Injectable({
@@ -107,6 +78,8 @@ export class StateService {
   });
 
   constructor() {
+    this.loadResources();
+
     effect(() => {
       localStorage.setItem(STORAGE_KEY_SCAN, JSON.stringify(this.scanOptions()));
     });
@@ -114,6 +87,48 @@ export class StateService {
     effect(() => {
       localStorage.setItem(STORAGE_KEY_TRANSFORM, JSON.stringify(this.transformOptions()));
     });
+  }
+
+  private async loadResources(): Promise<void> {
+    try {
+      const settingsRes = await fetch('assets/resources/default_settings.json');
+      if (settingsRes.ok) {
+        const settings = await settingsRes.json();
+        this.scanOptions.update(opts => ({
+          ...opts,
+          use_gitignore: settings.use_gitignore ?? opts.use_gitignore,
+          ignore_binary: settings.ignore_binary ?? opts.ignore_binary,
+          ignore_lockfiles: settings.ignore_lockfiles ?? opts.ignore_lockfiles,
+          manual_excludes: Array.from(new Set([...opts.manual_excludes, ...(settings.global_excludes || [])])),
+          binary_extensions: Array.from(new Set([...opts.binary_extensions, ...(settings.binary_extensions || [])])),
+          lockfiles_excludes: Array.from(new Set([...opts.lockfiles_excludes, ...(settings.lockfiles_excludes || [])]))
+        }));
+
+        this.transformOptions.update(opts => ({
+          ...opts,
+          xml_format: settings.xml_format ?? opts.xml_format,
+          strip_comments: settings.strip_comments ?? opts.strip_comments,
+          compress_whitespace: settings.compress_whitespace ?? opts.compress_whitespace,
+          sanitize_secrets: settings.sanitize_secrets ?? opts.sanitize_secrets,
+          always_send_full_tree: settings.always_send_full_tree ?? opts.always_send_full_tree
+        }));
+      }
+    } catch {
+
+    }
+
+    try {
+      const commentRes = await fetch('assets/resources/comment_rules.json');
+      if (commentRes.ok) {
+        const rulesText = await commentRes.text();
+        this.transformOptions.update(opts => ({
+          ...opts,
+          comment_rules_json: rulesText
+        }));
+      }
+    } catch {
+
+    }
   }
 
   setFocusedPath(relPath: string | null): void {
@@ -193,7 +208,7 @@ export class StateService {
     }
 
     if (selectedSet.size > 2000 || this.totalSizeBytes() > 30 * 1024 * 1024) {
-      const msg = `[Выбрано слишком много элементов (${selectedSet.size} файлов / ${this.totalSizeKb()} KB). Для защиты от зависания браузера автоматический сбор контекста приостановлен. Снимите выделение с папок с бинарными/большими файлами или выберите нужные исходные файлы вручную.]`;
+      const msg = `[Выбрано слишком много элементов (${selectedSet.size} файлов / ${this.totalSizeKb()} KB). Для защиты от зависания браузера автоматический сбор контекста приостановлен. Снимите выделение с ненужных папок или выберите нужные файлы вручную.]`;
       this.generatedPayload.set(msg);
       return msg;
     }
@@ -286,26 +301,26 @@ export class StateService {
       if (saved) {
         const parsed = JSON.parse(saved);
         return {
-          ...DEFAULT_SCAN_OPTIONS,
+          ...FALLBACK_SCAN_OPTIONS,
           ...parsed,
-          manual_excludes: Array.from(new Set([...DEFAULT_SCAN_OPTIONS.manual_excludes, ...(parsed.manual_excludes || [])]))
+          manual_excludes: Array.from(new Set([...FALLBACK_SCAN_OPTIONS.manual_excludes, ...(parsed.manual_excludes || [])]))
         };
       }
     } catch {
 
     }
-    return DEFAULT_SCAN_OPTIONS;
+    return FALLBACK_SCAN_OPTIONS;
   }
 
   private loadTransformOptions(): TransformOptionsWasm {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_TRANSFORM);
       if (saved) {
-        return { ...DEFAULT_TRANSFORM_OPTIONS, ...JSON.parse(saved) };
+        return { ...FALLBACK_TRANSFORM_OPTIONS, ...JSON.parse(saved) };
       }
     } catch {
 
     }
-    return DEFAULT_TRANSFORM_OPTIONS;
+    return FALLBACK_TRANSFORM_OPTIONS;
   }
 }

@@ -1,22 +1,8 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { StateService } from '../../core/services/state.service';
 import { ThemeService } from '../../core/services/theme.service';
-
-const PRESETS: Record<string, string[]> = {
-  'Все текстовые файлы (без ограничений)': [],
-  'Python (Data Science, PyTorch, Jupyter)': ['.py', '.ipynb', '.csv', '.json', '.yaml', '.yml', '.md', '.txt'],
-  'Python (FastAPI / Django / Flask)': ['.py', '.json', '.yaml', '.yml', '.ini', '.toml', '.md', '.txt'],
-  'React / Next.js / Tailwind (TS / JS)': ['.ts', '.tsx', '.js', '.jsx', '.css', '.html', '.json', '.md', '.yaml', '.yml'],
-  'Vue.js / Nuxt.js / Svelte': ['.vue', '.svelte', '.ts', '.js', '.css', '.html', '.json', '.md', '.yaml', '.yml'],
-  'Go / Wails / REST APIs': ['.go', '.svelte', '.ts', '.js', '.css', '.html', '.json', '.md', '.toml', '.yaml', '.yml'],
-  'Rust (Systems / WebAssembly)': ['.rs', '.toml', '.md', '.json', '.yaml', '.yml'],
-  'C / C++ (Embedded & Systems)': ['.cpp', '.hpp', '.c', '.h', '.md', '.cmake', 'Makefile', 'CMakeLists.txt'],
-  'Java / Spring Boot': ['.java', '.xml', '.properties', '.md', '.json', '.yaml', '.yml'],
-  'Kotlin / Android (Gradle)': ['.kt', '.kts', '.xml', '.properties', '.gradle', '.md', '.json'],
-  'C# / .NET / Web APIs': ['.cs', '.json', '.xml', '.config', '.md', '.yaml', '.yml', '.csproj', '.sln']
-};
 
 @Component({
   selector: 'app-settings-modal',
@@ -25,7 +11,7 @@ const PRESETS: Record<string, string[]> = {
   templateUrl: './settings-modal.component.html',
   styleUrl: './settings-modal.component.scss'
 })
-export class SettingsModalComponent {
+export class SettingsModalComponent implements OnInit {
   readonly stateService = inject(StateService);
   readonly themeService = inject(ThemeService);
 
@@ -37,7 +23,11 @@ export class SettingsModalComponent {
   ignoreLockfiles = true;
   alwaysSendFullTree = true;
 
-  presetKeys = Object.keys(PRESETS);
+  presets: Record<string, string[]> = {
+    'Все текстовые файлы (без ограничений)': []
+  };
+  presetKeys: string[] = ['Все текстовые файлы (без ограничений)'];
+
   allExtensions: string[] = [
     '.py', '.ipynb', '.csv', '.go', '.svelte', '.ts', '.tsx', '.js', '.jsx',
     '.vue', '.astro', '.css', '.html', '.json', '.md', '.toml', '.yaml', '.yml',
@@ -56,6 +46,31 @@ export class SettingsModalComponent {
   newExcludeInput = '';
 
   gitignoreDisabledRules: string[] = [];
+
+  async ngOnInit(): Promise<void> {
+    await this.loadDefaultSettingsResource();
+  }
+
+  private async loadDefaultSettingsResource(): Promise<void> {
+    try {
+      const res = await fetch('assets/resources/default_settings.json');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.presets) {
+          this.presets = data.presets;
+          this.presetKeys = Object.keys(data.presets);
+        }
+        if (data.all_known_extensions && Array.isArray(data.all_known_extensions)) {
+          this.allExtensions = Array.from(new Set([...this.allExtensions, ...data.all_known_extensions]));
+        }
+        if (data.global_excludes && Array.isArray(data.global_excludes)) {
+          this.allExcludes = Array.from(new Set([...this.allExcludes, ...data.global_excludes]));
+        }
+      }
+    } catch {
+
+    }
+  }
 
   open(): void {
     const opts = this.stateService.scanOptions();
@@ -77,7 +92,7 @@ export class SettingsModalComponent {
 
   onPresetSelect(event: Event): void {
     const presetName = (event.target as HTMLSelectElement).value;
-    const exts = PRESETS[presetName] || [];
+    const exts = this.presets[presetName] || [];
     this.activeExtensions = new Set(exts);
   }
 

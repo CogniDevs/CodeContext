@@ -27,6 +27,15 @@ const DEFAULT_HARD_EXCLUDES = [
   '.vscode'
 ];
 
+const DEFAULT_BINARY_EXTENSIONS = [
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.pdf', '.exe', '.dll',
+  '.bin', '.zip', '.tar', '.gz', '.tgz', '.rar', '.7z', '.mp3', '.mp4',
+  '.wav', '.avi', '.mov', '.woff', '.woff2', '.ttf', '.eot', '.otf', '.db',
+  '.sqlite', '.sqlite3', '.dmg', '.iso', '.msi', '.pkg', '.sys', '.cab',
+  '.psd', '.class', '.pyc', '.o', '.obj', '.so', '.dylib', '.suo', '.svg',
+  '.rlib', '.rmeta', '.pdb', '.whl', '.wasm', '.d', '.a', '.lib'
+];
+
 @Injectable({
   providedIn: 'root'
 })
@@ -44,6 +53,8 @@ export class FileSystemService {
 
     try {
       this.isScanning.set(true);
+      await this.wasmService.init();
+
       const handle = await (window as any).showDirectoryPicker();
       this.currentProjectName.set(handle.name);
 
@@ -59,6 +70,8 @@ export class FileSystemService {
   async readFromFiles(files: FileList | File[], options: ScanOptionsWasm): Promise<FileNode | null> {
     this.isScanning.set(true);
     try {
+      await this.wasmService.init();
+
       const fileArray = Array.from(files);
       if (fileArray.length === 0) {
         return null;
@@ -105,6 +118,8 @@ export class FileSystemService {
   async readFromDataTransfer(items: DataTransferItemList, options: ScanOptionsWasm): Promise<FileNode | null> {
     this.isScanning.set(true);
     try {
+      await this.wasmService.init();
+
       let rootHandle: FileSystemDirectoryHandle | null = null;
       let rootEntry: any = null;
 
@@ -153,6 +168,14 @@ export class FileSystemService {
   async getFileContent(node: FileNode): Promise<string> {
     if (node.is_dir) {
       return '';
+    }
+
+    const dotIdx = node.name.lastIndexOf('.');
+    if (dotIdx !== -1) {
+      const ext = node.name.substring(dotIdx).toLowerCase();
+      if (DEFAULT_BINARY_EXTENSIONS.includes(ext)) {
+        return `[Binary file '${node.name}' omitted]`;
+      }
     }
 
     if (node.fileHandle) {
@@ -241,6 +264,31 @@ export class FileSystemService {
       const cleanExclude = exclude.trim().replace(/\/$/, '');
       if (cleanExclude && (parts.includes(cleanExclude) || cleanPath === cleanExclude || cleanPath.startsWith(cleanExclude + '/'))) {
         return true;
+      }
+    }
+
+    if (!isDir) {
+      const dotIdx = name.lastIndexOf('.');
+      if (dotIdx !== -1) {
+        const ext = name.substring(dotIdx).toLowerCase();
+
+        if (options.ignore_binary) {
+          if (DEFAULT_BINARY_EXTENSIONS.includes(ext) || (options.binary_extensions && options.binary_extensions.includes(ext))) {
+            return true;
+          }
+        }
+
+        if (options.ignore_lockfiles) {
+          if (options.lockfiles_excludes && options.lockfiles_excludes.includes(name)) {
+            return true;
+          }
+        }
+
+        if (options.whitelist_extensions && options.whitelist_extensions.length > 0) {
+          if (!options.whitelist_extensions.includes(ext)) {
+            return true;
+          }
+        }
       }
     }
 

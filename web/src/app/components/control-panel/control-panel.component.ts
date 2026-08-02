@@ -1,4 +1,4 @@
-import { Component, inject, signal, output } from '@angular/core';
+import { Component, inject, signal, output, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { StateService } from '../../core/services/state.service';
@@ -9,28 +9,8 @@ export interface PromptPreset {
   prompt: string;
 }
 
-const DEFAULT_PRESETS: PromptPreset[] = [
-  { key: 'just_code', title: 'Только контекст (Без инструкций)', prompt: '' },
-  {
-    key: 'refactor',
-    title: 'Интерактивный рефакторинг и архитектурный аудит',
-    prompt: 'You are a Principal Software Architect and clean code expert. First, scan manifests to identify active library versions.\n\nINTERACTION PROTOCOL:\n1. Do NOT generate refactored code blocks in your first response.\n2. Output a <self_rules> block followed by an <analysis_and_plan> roadmap.\n3. Wait for user approval before coding. Output in Russian.'
-  },
-  {
-    key: 'bug_hunt',
-    title: 'Интерактивный поиск багов и утечек',
-    prompt: 'You are an Elite Security Researcher and Senior QA Engineer. First, scan manifests to identify active library versions.\n\nINTERACTION PROTOCOL:\n1. Do NOT write bugfixes in your first response.\n2. Output a <self_rules> block and <threat_modeling> plan.\n3. Wait for approval, then provide repairs one file at a time. Output in Russian.'
-  },
-  {
-    key: 'explain_code',
-    title: 'Интерактивный анализ и документирование',
-    prompt: 'You are a Lead Systems Technical Writer. Map data flows and architectural boundaries. Stop and ask the user which modules to document first. Output in Russian.'
-  },
-  {
-    key: 'unit_tests',
-    title: 'Интерактивный генератор Unit-тестов',
-    prompt: 'You are a Test Automation Architect. Isolate test scenarios and wait for user verification before writing complete mock scripts. Output in Russian.'
-  }
+const FALLBACK_PRESETS: PromptPreset[] = [
+  { key: 'just_code', title: 'Только контекст (Без инструкций)', prompt: '' }
 ];
 
 @Component({
@@ -40,14 +20,37 @@ const DEFAULT_PRESETS: PromptPreset[] = [
   templateUrl: './control-panel.component.html',
   styleUrl: './control-panel.component.scss'
 })
-export class ControlPanelComponent {
+export class ControlPanelComponent implements OnInit {
   readonly stateService = inject(StateService);
 
   readonly addPromptRequested = output<void>();
   readonly editPromptRequested = output<PromptPreset>();
 
-  readonly promptPresets = signal<PromptPreset[]>(DEFAULT_PRESETS);
+  readonly promptPresets = signal<PromptPreset[]>(FALLBACK_PRESETS);
   selectedPromptKey = 'just_code';
+
+  async ngOnInit(): Promise<void> {
+    await this.loadDefaultPrompts();
+  }
+
+  private async loadDefaultPrompts(): Promise<void> {
+    try {
+      const res = await fetch('assets/resources/default_prompts.json');
+      if (res.ok) {
+        const data: Record<string, { title: string; prompt: string }> = await res.json();
+        const loadedPresets: PromptPreset[] = Object.entries(data).map(([key, item]) => ({
+          key,
+          title: item.title,
+          prompt: item.prompt
+        }));
+        if (loadedPresets.length > 0) {
+          this.promptPresets.set(loadedPresets);
+        }
+      }
+    } catch {
+
+    }
+  }
 
   updateOption(key: keyof ReturnType<typeof this.stateService.transformOptions>, value: boolean): void {
     this.stateService.transformOptions.update(opts => ({ ...opts, [key]: value }));
