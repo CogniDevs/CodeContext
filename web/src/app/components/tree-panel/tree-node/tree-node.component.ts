@@ -2,11 +2,12 @@ import { Component, Input, inject, ChangeDetectionStrategy } from '@angular/core
 import { CommonModule } from '@angular/common';
 import { StateService } from '../../../core/services/state.service';
 import { FileNode } from '../../../core/services/file-system.service';
+import { FileIconComponent } from '../../file-icon/file-icon.component';
 
 @Component({
   selector: 'app-tree-node',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FileIconComponent],
   templateUrl: './tree-node.component.html',
   styleUrl: './tree-node.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush

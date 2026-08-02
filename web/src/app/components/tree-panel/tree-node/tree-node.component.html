@@ -10,10 +10,8 @@
         <button class="btn-toggle" (click)="toggleExpand($event)">
           <span class="arrow" [class.expanded]="isExpanded">▶</span>
         </button>
-        <span class="icon icon-folder"></span>
       } @else {
         <span class="spacer"></span>
-        <span class="icon icon-file"></span>
       }
 
       <input
@@ -24,6 +22,12 @@
         (click)="$event.stopPropagation()"
         (change)="onCheckboxChange($event, node)"
       />
+
+      <app-file-icon
+        [name]="node.name"
+        [isDir]="node.is_dir"
+        [isExpanded]="isExpanded"
+      ></app-file-icon>
 
       <span class="node-name" [class.is-dir]="node.is_dir">{{ node.name }}</span>
 
