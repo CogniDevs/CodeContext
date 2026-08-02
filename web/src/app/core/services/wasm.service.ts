@@ -39,8 +39,11 @@ export class WasmService {
 
     try {
       const wasm = await import('codecontext_core');
+
+      const wasmPath = 'assets/wasm/codecontext_core_bg.wasm';
+
       if (typeof wasm.default === 'function') {
-        await wasm.default();
+        await wasm.default(wasmPath);
       }
       this.wasmModule = wasm;
       this.isLoaded.set(true);

@@ -20,7 +20,6 @@ export class TreePanelComponent {
 
   selectAll(check: boolean): void {
     this.stateService.selectAllFiles(check);
-    this.stateService.generatePayload();
   }
 
   setExpandAll(expand: boolean): void {

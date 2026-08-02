@@ -19,7 +19,6 @@ export class HeaderComponent {
   async onOpenDirectory(): Promise<void> {
     try {
       await this.fileSystemService.openDirectoryPicker(this.stateService.scanOptions());
-      this.stateService.selectAllFiles(true);
       await this.stateService.generatePayload();
     } catch (err: any) {
       if (err?.name !== 'AbortError') {
@@ -32,7 +31,6 @@ export class HeaderComponent {
     const input = event.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
       this.fileSystemService.readFromFiles(input.files, this.stateService.scanOptions()).then(() => {
-        this.stateService.selectAllFiles(true);
         this.stateService.generatePayload();
       });
     }

@@ -44,9 +44,9 @@
                 "output": "assets/icons/material"
               },
               {
-                "glob": "*.wasm",
-                "input": "node_modules/codecontext_core",
-                "output": "./"
+                "glob": "*",
+                "input": "../codecontext_core/pkg",
+                "output": "assets/wasm"
               }
             ],
             "styles": ["src/styles.scss"],
@@ -118,9 +118,9 @@
                 "output": "assets/icons/material"
               },
               {
-                "glob": "*.wasm",
-                "input": "node_modules/codecontext_core",
-                "output": "./"
+                "glob": "*",
+                "input": "../codecontext_core/pkg",
+                "output": "assets/wasm"
               }
             ],
             "styles": ["src/styles.scss"],

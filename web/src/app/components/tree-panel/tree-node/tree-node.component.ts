@@ -46,9 +46,12 @@ export class TreeNodeComponent {
 
   getSelectionState(node: FileNode): { checked: boolean; indeterminate: boolean } {
     const selectedSet = this.stateService.selectedPaths();
+    if (selectedSet.size === 0) {
+      return { checked: false, indeterminate: false };
+    }
+
     if (!node.is_dir) {
-      const isSel = selectedSet.has(node.rel_path);
-      return { checked: isSel, indeterminate: false };
+      return { checked: selectedSet.has(node.rel_path), indeterminate: false };
     }
 
     let total = 0;
@@ -85,7 +88,6 @@ export class TreeNodeComponent {
   onCheckboxChange(event: Event, node: FileNode): void {
     const checked = (event.target as HTMLInputElement).checked;
     this.toggleNodeRecursive(node, checked);
-    this.stateService.generatePayload();
   }
 
   private toggleNodeRecursive(node: FileNode, check: boolean): void {

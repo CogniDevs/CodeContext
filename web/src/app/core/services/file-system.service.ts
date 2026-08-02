@@ -24,7 +24,8 @@ const DEFAULT_HARD_EXCLUDES = [
   '.venv',
   'venv',
   '.idea',
-  '.vscode'
+  '.vscode',
+  'icon_data.py'
 ];
 
 const DEFAULT_BINARY_EXTENSIONS = [
@@ -205,6 +206,10 @@ export class FileSystemService {
       return this.fileContentCache.get(node.rel_path)!;
     }
 
+    if (node.name.toLowerCase() === 'icon_data.py' || node.name.toLowerCase().endsWith('_data.py')) {
+      return `[Auto-generated base64 asset file '${node.name}' omitted]`;
+    }
+
     const dotIdx = node.name.lastIndexOf('.');
     if (dotIdx !== -1) {
       const ext = node.name.substring(dotIdx).toLowerCase();
@@ -222,6 +227,13 @@ export class FileSystemService {
     }
 
     if (content) {
+      const lines = content.split('\n');
+      for (let i = 0; i < Math.min(lines.length, 50); i++) {
+        if (lines[i].length > 8000) {
+          content = `[File '${node.name}' omitted: contains excessively long single-line data]`;
+          break;
+        }
+      }
       this.fileContentCache.set(node.rel_path, content);
     }
 

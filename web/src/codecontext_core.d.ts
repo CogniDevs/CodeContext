@@ -1,5 +1,5 @@
 declare module 'codecontext_core' {
-  const init: () => Promise<any>;
+  const init: (module_or_path?: any) => Promise<any>;
   export default init;
 
   export function compress_whitespace_wasm(text: string): string;

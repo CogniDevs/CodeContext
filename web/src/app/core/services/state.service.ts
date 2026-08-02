@@ -22,7 +22,8 @@ const FALLBACK_SCAN_OPTIONS: ScanOptionsWasm = {
     '.venv',
     'venv',
     '.idea',
-    '.vscode'
+    '.vscode',
+    'icon_data.py'
   ],
   gitignore_disabled_rules: [],
   binary_extensions: ['.png', '.jpg', '.jpeg', '.gif', '.ico', '.pdf', '.zip', '.exe', '.dll', '.so', '.dylib', '.wasm', '.svg'],
@@ -55,6 +56,8 @@ export class StateService {
   readonly focusedPath = signal<string | null>(null);
   readonly generatedPayload = signal<string>('');
   readonly isGenerating = signal<boolean>(false);
+
+  private generateTimer: any = null;
 
   readonly selectedFilesCount = computed(() => this.selectedPaths().size);
 
@@ -101,53 +104,54 @@ export class StateService {
       const sel = this.selectedPaths();
       const opts = this.transformOptions();
       if (root && sel.size > 0) {
-        this.generatePayload();
+        this.schedulePayloadGeneration();
       } else {
+        if (this.generateTimer) {
+          clearTimeout(this.generateTimer);
+        }
         this.generatedPayload.set('');
       }
     });
   }
 
-  private async loadResources(): Promise<void> {
-    try {
-      const settingsRes = await fetch('assets/resources/default_settings.json');
-      if (settingsRes.ok) {
-        const settings = await settingsRes.json();
-        this.scanOptions.update(opts => ({
-          ...opts,
-          use_gitignore: settings.use_gitignore ?? opts.use_gitignore,
-          ignore_binary: settings.ignore_binary ?? opts.ignore_binary,
-          ignore_lockfiles: settings.ignore_lockfiles ?? opts.ignore_lockfiles,
-          manual_excludes: Array.from(new Set([...opts.manual_excludes, ...(settings.global_excludes || [])])),
-          binary_extensions: Array.from(new Set([...opts.binary_extensions, ...(settings.binary_extensions || [])])),
-          lockfiles_excludes: Array.from(new Set([...opts.lockfiles_excludes, ...(settings.lockfiles_excludes || [])]))
-        }));
+  private loadResources(): void {
+    fetch('assets/resources/default_settings.json')
+      .then(res => res.ok ? res.json() : null)
+      .then(settings => {
+        if (settings) {
+          this.scanOptions.update(opts => ({
+            ...opts,
+            use_gitignore: settings.use_gitignore ?? opts.use_gitignore,
+            ignore_binary: settings.ignore_binary ?? opts.ignore_binary,
+            ignore_lockfiles: settings.ignore_lockfiles ?? opts.ignore_lockfiles,
+            manual_excludes: Array.from(new Set([...opts.manual_excludes, ...(settings.global_excludes || []), 'icon_data.py'])),
+            binary_extensions: Array.from(new Set([...opts.binary_extensions, ...(settings.binary_extensions || [])])),
+            lockfiles_excludes: Array.from(new Set([...opts.lockfiles_excludes, ...(settings.lockfiles_excludes || [])]))
+          }));
 
-        this.transformOptions.update(opts => ({
-          ...opts,
-          xml_format: settings.xml_format ?? opts.xml_format,
-          strip_comments: settings.strip_comments ?? opts.strip_comments,
-          compress_whitespace: settings.compress_whitespace ?? opts.compress_whitespace,
-          sanitize_secrets: settings.sanitize_secrets ?? opts.sanitize_secrets,
-          always_send_full_tree: settings.always_send_full_tree ?? opts.always_send_full_tree
-        }));
-      }
-    } catch {
+          this.transformOptions.update(opts => ({
+            ...opts,
+            xml_format: settings.xml_format ?? opts.xml_format,
+            strip_comments: settings.strip_comments ?? opts.strip_comments,
+            compress_whitespace: settings.compress_whitespace ?? opts.compress_whitespace,
+            sanitize_secrets: settings.sanitize_secrets ?? opts.sanitize_secrets,
+            always_send_full_tree: settings.always_send_full_tree ?? opts.always_send_full_tree
+          }));
+        }
+      })
+      .catch(() => {});
 
-    }
-
-    try {
-      const commentRes = await fetch('assets/resources/comment_rules.json');
-      if (commentRes.ok) {
-        const rulesText = await commentRes.text();
-        this.transformOptions.update(opts => ({
-          ...opts,
-          comment_rules_json: rulesText
-        }));
-      }
-    } catch {
-
-    }
+    fetch('assets/resources/comment_rules.json')
+      .then(res => res.ok ? res.text() : null)
+      .then(rulesText => {
+        if (rulesText) {
+          this.transformOptions.update(opts => ({
+            ...opts,
+            comment_rules_json: rulesText
+          }));
+        }
+      })
+      .catch(() => {});
   }
 
   resetExpandedToRoot(): void {
@@ -221,6 +225,15 @@ export class StateService {
     this.selectedPaths.set(newSet);
   }
 
+  schedulePayloadGeneration(): void {
+    if (this.generateTimer) {
+      clearTimeout(this.generateTimer);
+    }
+    this.generateTimer = setTimeout(() => {
+      this.generatePayload();
+    }, 250);
+  }
+
   async traceDependenciesForFocusedFile(): Promise<number> {
     await this.wasmService.init();
 
@@ -249,7 +262,6 @@ export class StateService {
         }
         return next;
       });
-      await this.generatePayload();
       return deps.length;
     }
 
@@ -273,20 +285,22 @@ export class StateService {
       return '';
     }
 
-    if (selectedSet.size > 2000 || this.totalSizeBytes() > 30 * 1024 * 1024) {
-      const msg = `[Выбрано слишком много элементов (${selectedSet.size} файлов / ${this.totalSizeKb()} KB). Для защиты от зависания браузера автоматический сбор контекста приостановлен. Снимите выделение с ненужных папок или выберите нужные файлы вручную.]`;
+    if (selectedSet.size > 2500 || this.totalSizeBytes() > 30 * 1024 * 1024) {
+      const msg = '[Выбрано слишком много элементов (' + selectedSet.size + ' файлов / ' + this.totalSizeKb() + ' KB). Выделите только необходимые файлы]';
       this.generatedPayload.set(msg);
       return msg;
     }
 
     this.isGenerating.set(true);
 
+    await new Promise(resolve => setTimeout(resolve, 80));
+
     try {
       const filesToRead: FileNode[] = [];
       this.collectSelectedFileNodes(root, selectedSet, filesToRead);
 
       const filesPayload: Array<[string, string]> = [];
-      const chunkSize = 25;
+      const chunkSize = 15;
       for (let i = 0; i < filesToRead.length; i += chunkSize) {
         const chunk = filesToRead.slice(i, i + chunkSize);
         const chunkResults = await Promise.all(
@@ -300,6 +314,10 @@ export class StateService {
           })
         );
         filesPayload.push(...chunkResults);
+
+        if (i % 60 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 15));
+        }
       }
 
       const allAncestorPaths = new Set<string>();
@@ -325,7 +343,7 @@ export class StateService {
       return payload;
     } catch (err: any) {
       console.error('[Generate Payload Error]', err);
-      const errMsg = `[Error generating context: ${err?.message || err}]`;
+      const errMsg = '[Error generating context: ' + (err?.message || err) + ']';
       this.generatedPayload.set(errMsg);
       return errMsg;
     } finally {
@@ -393,7 +411,7 @@ export class StateService {
         return {
           ...FALLBACK_SCAN_OPTIONS,
           ...parsed,
-          manual_excludes: Array.from(new Set([...FALLBACK_SCAN_OPTIONS.manual_excludes, ...(parsed.manual_excludes || [])]))
+          manual_excludes: Array.from(new Set([...FALLBACK_SCAN_OPTIONS.manual_excludes, ...(parsed.manual_excludes || []), 'icon_data.py']))
         };
       }
     } catch {
