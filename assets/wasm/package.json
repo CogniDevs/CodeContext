@@ -1,0 +1,15 @@
+{
+  "name": "codecontext_core",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "codecontext_core_bg.wasm",
+    "codecontext_core.js",
+    "codecontext_core.d.ts"
+  ],
+  "main": "codecontext_core.js",
+  "types": "codecontext_core.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
