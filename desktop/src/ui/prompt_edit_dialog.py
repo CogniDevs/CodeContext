@@ -5,8 +5,7 @@ from PyQt6.QtWidgets import (
     QTabWidget, QScrollArea, QFrame, QCheckBox, QWidget, QStyle
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon
-from config.resource_helper import get_resource_path
+from config.resource_helper import get_recolored_icon
 
 
 class PromptEditDialog(QDialog):
@@ -69,7 +68,7 @@ class RuleCardWidget(QFrame):
         layout.addLayout(text_layout, 1)
 
         self.btn_edit = QPushButton("✏")
-        edit_icon = QIcon(get_resource_path("resources/icons/edit.svg"))
+        edit_icon = get_recolored_icon("resources/icons/ui/edit.svg", "#ffffff")
         if not edit_icon.isNull():
             self.btn_edit.setIcon(edit_icon)
             self.btn_edit.setText("")
@@ -78,7 +77,7 @@ class RuleCardWidget(QFrame):
         self.btn_edit.clicked.connect(lambda: self.on_edit_callback(self.rule_data))
 
         self.btn_delete = QPushButton("🗑")
-        delete_icon = QIcon(get_resource_path("resources/icons/delete.svg"))
+        delete_icon = get_recolored_icon("resources/icons/ui/delete.svg", "#ffffff")
         if not delete_icon.isNull():
             self.btn_delete.setIcon(delete_icon)
             self.btn_delete.setText("")
@@ -186,10 +185,12 @@ class PromptCreateDialog(QDialog):
             scroll.setWidget(scroll_content)
             tab_layout.addWidget(scroll, 1)
 
-            btn_add_rule = QPushButton("➕ Добавить свое правило")
-            add_icon = QIcon(get_resource_path("resources/icons/add.svg"))
+            btn_add_rule = QPushButton("Добавить свое правило")
+            add_icon = get_recolored_icon("resources/icons/ui/add.svg", "#ffffff")
             if not add_icon.isNull():
                 btn_add_rule.setIcon(add_icon)
+            else:
+                btn_add_rule.setText("➕ Добавить свое правило")
             btn_add_rule.clicked.connect(lambda checked, ck=cat_key: self.create_custom_rule(ck))
             tab_layout.addWidget(btn_add_rule)
 

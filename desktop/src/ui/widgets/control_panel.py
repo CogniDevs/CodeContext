@@ -1,5 +1,6 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, QCheckBox, QGroupBox, QTextEdit
 from PyQt6.QtCore import pyqtSignal
+from config.resource_helper import get_recolored_icon
 
 
 class ControlPanel(QWidget):
@@ -26,11 +27,21 @@ class ControlPanel(QWidget):
         self.combo_prompts.currentTextChanged.connect(lambda: self.prompt_changed.emit())
         prompt_selector_layout.addWidget(self.combo_prompts, 1)
 
-        btn_add_prompt = QPushButton("➕ Добавить")
+        btn_add_prompt = QPushButton("Добавить")
+        add_icon = get_recolored_icon("resources/icons/ui/add.svg", "#ffffff")
+        if not add_icon.isNull():
+            btn_add_prompt.setIcon(add_icon)
+        else:
+            btn_add_prompt.setText("➕ Добавить")
         btn_add_prompt.clicked.connect(self.add_prompt_clicked.emit)
         prompt_selector_layout.addWidget(btn_add_prompt)
 
-        btn_edit_prompt = QPushButton("⚙ Изменить")
+        btn_edit_prompt = QPushButton("Изменить")
+        edit_icon = get_recolored_icon("resources/icons/ui/edit.svg", "#ffffff")
+        if not edit_icon.isNull():
+            btn_edit_prompt.setIcon(edit_icon)
+        else:
+            btn_edit_prompt.setText("⚙ Изменить")
         btn_edit_prompt.clicked.connect(self.edit_prompt_clicked.emit)
         prompt_selector_layout.addWidget(btn_edit_prompt)
         ai_layout.addLayout(prompt_selector_layout)
@@ -117,5 +128,5 @@ class ControlPanel(QWidget):
     def append_log(self, text: str):
         self.log_output.append(text)
 
-    def clear_log(self):
+    def delete_log(self):
         self.log_output.clear()

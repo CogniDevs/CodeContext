@@ -6,8 +6,14 @@
       <div class="label-row">
         <label class="form-label">Шаблон задачи (Скилл ИИ):</label>
         <div class="btn-group">
-          <button class="btn btn-secondary btn-xs" (click)="onAddPrompt()">➕ Добавить</button>
-          <button class="btn btn-secondary btn-xs" (click)="onEditPrompt()">⚙ Изменить</button>
+          <button class="btn btn-secondary btn-xs" (click)="onAddPrompt()">
+            <span class="icon icon-add"></span>
+            <span>Добавить</span>
+          </button>
+          <button class="btn btn-secondary btn-xs" (click)="onEditPrompt()">
+            <span class="icon icon-edit"></span>
+            <span>Изменить</span>
+          </button>
         </div>
       </div>
       <select

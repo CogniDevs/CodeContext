@@ -5,6 +5,7 @@ from PyQt6.QtGui import QAction
 
 from config.config_manager import ConfigManager
 from config.prompt_manager import PromptManager
+from config.resource_helper import get_recolored_icon
 from ui.widgets.paths_panel import PathsPanel
 from ui.widgets.tree_panel import TreePanel
 from ui.widgets.control_panel import ControlPanel
@@ -81,10 +82,17 @@ class CodeContextApp(QMainWindow):
 
         settings_menu = menu_bar.addMenu("Настройки")
 
-        act_pref = QAction("⚙ Параметры...", self)
-        act_pref.setShortcut("Ctrl+P")
-        act_pref.triggered.connect(self.open_settings_dialog)
-        settings_menu.addAction(act_pref)
+        self.act_pref = QAction("Параметры...", self)
+        self.act_pref.setShortcut("Ctrl+P")
+
+        theme = self.config_manager.get("theme", "Темная (VS Code)")
+        color = "#d4d4d4" if "Темная" in theme else "#1f1f1f"
+        settings_icon = get_recolored_icon("resources/icons/ui/settings.svg", color)
+        if not settings_icon.isNull():
+            self.act_pref.setIcon(settings_icon)
+
+        self.act_pref.triggered.connect(self.open_settings_dialog)
+        settings_menu.addAction(self.act_pref)
 
         help_menu = menu_bar.addMenu("Справка")
 
@@ -141,8 +149,15 @@ class CodeContextApp(QMainWindow):
         theme = self.config_manager.get("theme", "Темная (VS Code)")
         if "Темная" in theme:
             self.setStyleSheet(get_stylesheet(DARK_PALETTE))
+            color = "#d4d4d4"
         else:
             self.setStyleSheet(get_stylesheet(LIGHT_PALETTE))
+            color = "#1f1f1f"
+
+        if hasattr(self, 'act_pref'):
+            settings_icon = get_recolored_icon("resources/icons/ui/settings.svg", color)
+            if not settings_icon.isNull():
+                self.act_pref.setIcon(settings_icon)
 
     def show_about_dialog(self):
         QMessageBox.about(

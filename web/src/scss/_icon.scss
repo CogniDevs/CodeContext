@@ -12,47 +12,52 @@
   -webkit-mask-size: contain;
 
   &.icon-folder-open {
-    mask-image: url('../../public/assets/icons/folder-open.svg');
-    -webkit-mask-image: url('../../public/assets/icons/folder-open.svg');
+    mask-image: url('/assets/icons/folder-open.svg');
+    -webkit-mask-image: url('/assets/icons/folder-open.svg');
   }
 
   &.icon-file-search {
-    mask-image: url('../../public/assets/icons/file-search.svg');
-    -webkit-mask-image: url('../../public/assets/icons/file-search.svg');
+    mask-image: url('/assets/icons/file-search.svg');
+    -webkit-mask-image: url('/assets/icons/file-search.svg');
   }
 
   &.icon-sun {
-    mask-image: url('../../public/assets/icons/sun.svg');
-    -webkit-mask-image: url('../../public/assets/icons/sun.svg');
+    mask-image: url('/assets/icons/sun.svg');
+    -webkit-mask-image: url('/assets/icons/sun.svg');
   }
 
   &.icon-moon {
-    mask-image: url('../../public/assets/icons/moon.svg');
-    -webkit-mask-image: url('../../public/assets/icons/moon.svg');
+    mask-image: url('/assets/icons/moon.svg');
+    -webkit-mask-image: url('/assets/icons/moon.svg');
   }
 
   &.icon-folder {
-    mask-image: url('../../public/assets/icons/folder.svg');
-    -webkit-mask-image: url('../../public/assets/icons/folder.svg');
+    mask-image: url('/assets/icons/folder.svg');
+    -webkit-mask-image: url('/assets/icons/folder.svg');
   }
 
   &.icon-add {
-    mask-image: url('../../public/assets/icons/add.svg');
-    -webkit-mask-image: url('../../public/assets/icons/add.svg');
+    mask-image: url('/assets/icons/add.svg');
+    -webkit-mask-image: url('/assets/icons/add.svg');
   }
 
   &.icon-edit {
-    mask-image: url('../../public/assets/icons/edit.svg');
-    -webkit-mask-image: url('../../public/assets/icons/edit.svg');
+    mask-image: url('/assets/icons/edit.svg');
+    -webkit-mask-image: url('/assets/icons/edit.svg');
   }
 
   &.icon-delete {
-    mask-image: url('../../public/assets/icons/delete.svg');
-    -webkit-mask-image: url('../../public/assets/icons/delete.svg');
+    mask-image: url('/assets/icons/delete.svg');
+    -webkit-mask-image: url('/assets/icons/delete.svg');
+  }
+
+  &.icon-settings {
+    mask-image: url('/assets/icons/settings.svg');
+    -webkit-mask-image: url('/assets/icons/settings.svg');
   }
 
   &.icon-app {
-    mask-image: url('../../public/favicon.svg');
-    -webkit-mask-image: url('../../public/favicon.svg');
+    mask-image: url('/favicon.svg');
+    -webkit-mask-image: url('/favicon.svg');
   }
 }

@@ -8,7 +8,7 @@
     >
       @if (node.is_dir) {
         <button class="btn-toggle" (click)="toggleExpand($event)">
-          <span class="arrow" [class.expanded]="isExpanded">▶</span>
+          <span class="arrow" [class.expanded]="isExpanded"></span>
         </button>
       } @else {
         <span class="spacer"></span>

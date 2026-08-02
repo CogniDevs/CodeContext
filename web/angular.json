@@ -35,6 +35,11 @@
               },
               {
                 "glob": "*.svg",
+                "input": "../resources/icons/ui",
+                "output": "assets/icons"
+              },
+              {
+                "glob": "*.svg",
                 "input": "../resources/icons/material",
                 "output": "assets/icons/material"
               },
@@ -101,6 +106,11 @@
                 "glob": "**/*.json",
                 "input": "../resources",
                 "output": "assets/resources"
+              },
+              {
+                "glob": "*.svg",
+                "input": "../resources/icons/ui",
+                "output": "assets/icons"
               },
               {
                 "glob": "*.svg",
