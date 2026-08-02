@@ -34,6 +34,11 @@
                 "glob": "**/*.json",
                 "input": "../resources",
                 "output": "assets/resources"
+              },
+              {
+                "glob": "*.wasm",
+                "input": "node_modules/codecontext_core",
+                "output": "./"
               }
             ],
             "styles": [
@@ -98,6 +103,11 @@
                 "glob": "**/*.json",
                 "input": "../resources",
                 "output": "assets/resources"
+              },
+              {
+                "glob": "*.wasm",
+                "input": "node_modules/codecontext_core",
+                "output": "./"
               }
             ],
             "styles": [

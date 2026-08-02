@@ -95,6 +95,17 @@ export class StateService {
         this.resetExpandedToRoot();
       }
     });
+
+    effect(() => {
+      const root = this.fileSystemService.rootNode();
+      const sel = this.selectedPaths();
+      const opts = this.transformOptions();
+      if (root && sel.size > 0) {
+        this.generatePayload();
+      } else {
+        this.generatedPayload.set('');
+      }
+    });
   }
 
   private async loadResources(): Promise<void> {
@@ -211,6 +222,8 @@ export class StateService {
   }
 
   async traceDependenciesForFocusedFile(): Promise<number> {
+    await this.wasmService.init();
+
     const focusedRelPath = this.focusedPath();
     const root = this.fileSystemService.rootNode();
     const rootName = this.fileSystemService.currentProjectName() || 'project';
@@ -244,6 +257,8 @@ export class StateService {
   }
 
   async generatePayload(): Promise<string> {
+    await this.wasmService.init();
+
     const root = this.fileSystemService.rootNode();
     const projectName = this.fileSystemService.currentProjectName() || 'project';
 
@@ -308,6 +323,11 @@ export class StateService {
 
       this.generatedPayload.set(payload);
       return payload;
+    } catch (err: any) {
+      console.error('[Generate Payload Error]', err);
+      const errMsg = `[Error generating context: ${err?.message || err}]`;
+      this.generatedPayload.set(errMsg);
+      return errMsg;
     } finally {
       this.isGenerating.set(false);
     }

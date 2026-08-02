@@ -45,6 +45,7 @@ export class WasmService {
       this.wasmModule = wasm;
       this.isLoaded.set(true);
     } catch (err: any) {
+      console.error('[CodeContext WASM Init Error]', err);
       this.error.set(err?.message || 'Failed to initialize WebAssembly core');
     }
   }
@@ -116,6 +117,7 @@ export class WasmService {
     options: TransformOptionsWasm
   ): string {
     if (!this.wasmModule?.build_payload_wasm) {
+      console.warn('[WASM] build_payload_wasm not available');
       return '';
     }
     const cleanOptions: TransformOptionsWasm = {
