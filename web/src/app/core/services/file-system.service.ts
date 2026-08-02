@@ -84,6 +84,52 @@ export class FileSystemService {
     }
   }
 
+  async readFromDataTransfer(items: DataTransferItemList, options: ScanOptionsWasm): Promise<FileNode | null> {
+    this.isScanning.set(true);
+    try {
+      let rootHandle: FileSystemDirectoryHandle | null = null;
+      let rootEntry: any = null;
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === 'file') {
+          if ('getAsFileSystemHandle' in item) {
+            const handle = await (item as any).getAsFileSystemHandle();
+            if (handle && handle.kind === 'directory') {
+              rootHandle = handle as FileSystemDirectoryHandle;
+              break;
+            }
+          }
+          if ('webkitGetAsEntry' in item) {
+            const entry = item.webkitGetAsEntry();
+            if (entry && entry.isDirectory) {
+              rootEntry = entry;
+              break;
+            }
+          }
+        }
+      }
+
+      if (rootHandle) {
+        this.currentProjectName.set(rootHandle.name);
+        const root = await this.scanDirectoryHandle(rootHandle, rootHandle.name, '', options);
+        this.rootNode.set(root);
+        return root;
+      }
+
+      if (rootEntry) {
+        this.currentProjectName.set(rootEntry.name);
+        const root = await this.scanWebkitEntry(rootEntry, rootEntry.name, '', options);
+        this.rootNode.set(root);
+        return root;
+      }
+
+      return null;
+    } finally {
+      this.isScanning.set(false);
+    }
+  }
+
   async getFileContent(node: FileNode): Promise<string> {
     if (node.is_dir) {
       return '';
@@ -158,6 +204,61 @@ export class FileSystemService {
           size: file.size,
           children: [],
           fileHandle
+        });
+      }
+    }
+
+    return currentNode;
+  }
+
+  private async scanWebkitEntry(
+    entry: any,
+    name: string,
+    relPath: string,
+    options: ScanOptionsWasm
+  ): Promise<FileNode> {
+    const currentNode: FileNode = {
+      name,
+      full_path: relPath ? `${relPath}/${name}` : name,
+      rel_path: relPath,
+      is_dir: true,
+      size: 0,
+      children: []
+    };
+
+    const dirReader = entry.createReader();
+    const entries: any[] = await new Promise((resolve) => {
+      dirReader.readEntries((results: any[]) => resolve(results));
+    });
+
+    entries.sort((a, b) => {
+      if (a.isDirectory !== b.isDirectory) {
+        return b.isDirectory ? 1 : -1;
+      }
+      return a.name.localeCompare(b.name);
+    });
+
+    for (const childEntry of entries) {
+      const childRelPath = relPath ? `${relPath}/${childEntry.name}` : childEntry.name;
+      const isDir = childEntry.isDirectory;
+
+      if (this.wasmService.isIgnored(childRelPath, isDir, options)) {
+        continue;
+      }
+
+      if (isDir) {
+        const childNode = await this.scanWebkitEntry(childEntry, childEntry.name, childRelPath, options);
+        currentNode.children.push(childNode);
+      } else {
+        const file: File = await new Promise((resolve) => childEntry.file(resolve));
+        currentNode.children.push({
+          name: childEntry.name,
+          full_path: `${currentNode.full_path}/${childEntry.name}`,
+          rel_path: childRelPath,
+          is_dir: false,
+          size: file.size,
+          children: [],
+          rawFile: file
         });
       }
     }

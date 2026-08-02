@@ -1,0 +1,82 @@
+@if (isOpen()) {
+  <div class="modal-backdrop" (click)="close()">
+    <div class="modal-container" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h2>{{ mode === 'edit' ? 'Редактирование скилла ИИ' : 'Конструктор скиллов ИИ' }}</h2>
+        <button class="btn-close" (click)="close()">✕</button>
+      </div>
+
+      <div class="modal-body">
+        @if (mode === 'edit') {
+          <div class="edit-mode-container">
+            <div class="form-group">
+              <label class="form-label">Название скилла:</label>
+              <input
+                type="text"
+                class="form-control"
+                [(ngModel)]="titleInput"
+              />
+            </div>
+
+            <div class="form-group flex-1">
+              <label class="form-label">Текст системной инструкции для ИИ-ассистента:</label>
+              <textarea
+                class="form-control prompt-textarea text-mono"
+                [(ngModel)]="promptTextInput"
+              ></textarea>
+            </div>
+          </div>
+        } @else {
+          <div class="create-mode-container">
+            <div class="form-group">
+              <label class="form-label">Название нового скилла:</label>
+              <input
+                type="text"
+                class="form-control"
+                placeholder="Например: Python Senior Architect"
+                [(ngModel)]="titleInput"
+              />
+            </div>
+
+            <div class="category-tabs">
+              @for (cat of categoryList; track cat.key) {
+                <button
+                  class="tab-btn"
+                  [class.active]="activeCategory === cat.key"
+                  (click)="activeCategory = cat.key"
+                >
+                  {{ cat.title }}
+                </button>
+              }
+            </div>
+
+            <div class="rules-list">
+              @for (rule of getRulesForCategory(activeCategory); track rule.id) {
+                <div class="rule-card" [class.active]="rule.active">
+                  <input
+                    type="checkbox"
+                    class="checkbox"
+                    [checked]="rule.active"
+                    (change)="toggleRuleActive(rule)"
+                  />
+                  <div class="rule-details">
+                    <span class="rule-title">{{ rule.title }}</span>
+                    <span class="rule-desc">{{ rule.description }}</span>
+                    <pre class="rule-text text-mono">{{ rule.rule_text }}</pre>
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+        }
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn" (click)="saveAndClose()">
+          {{ mode === 'edit' ? 'Сохранить изменения' : 'Собрать и сохранить скилл' }}
+        </button>
+        <button class="btn btn-secondary" (click)="close()">Отмена</button>
+      </div>
+    </div>
+  </div>
+}

@@ -8,11 +8,28 @@
   margin-top: 8px;
 }
 
+.label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
 .form-label {
   font-size: 11px;
   color: var(--fg-muted);
-  margin-bottom: 4px;
   display: block;
+}
+
+.btn-group {
+  display: flex;
+  gap: 4px;
+}
+
+.btn-xs {
+  padding: 2px 6px;
+  font-size: 10px;
+  border-radius: var(--radius-sm);
 }
 
 .toggles-grid {

@@ -1,6 +1,9 @@
-import { Injectable, inject, signal, computed } from '@angular/core';
+import { Injectable, inject, signal, computed, effect } from '@angular/core';
 import { WasmService, ScanOptionsWasm, TransformOptionsWasm } from './wasm.service';
 import { FileSystemService, FileNode } from './file-system.service';
+
+const STORAGE_KEY_SCAN = 'codecontext_scan_options';
+const STORAGE_KEY_TRANSFORM = 'codecontext_transform_options';
 
 const DEFAULT_COMMENT_RULES_JSON = JSON.stringify({
   rules: {
@@ -31,6 +34,28 @@ const DEFAULT_COMMENT_RULES_JSON = JSON.stringify({
   }
 });
 
+const DEFAULT_SCAN_OPTIONS: ScanOptionsWasm = {
+  use_gitignore: true,
+  ignore_binary: true,
+  ignore_lockfiles: true,
+  whitelist_extensions: [],
+  manual_excludes: ['.git', 'node_modules', 'dist', 'target', '.angular'],
+  gitignore_disabled_rules: [],
+  binary_extensions: ['.png', '.jpg', '.jpeg', '.gif', '.ico', '.pdf', '.zip', '.exe', '.dll', '.so', '.dylib', '.wasm'],
+  lockfiles_excludes: ['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'Cargo.lock', 'go.sum']
+};
+
+const DEFAULT_TRANSFORM_OPTIONS: TransformOptionsWasm = {
+  strip_comments: false,
+  compress_whitespace: false,
+  sanitize_secrets: false,
+  skeleton_mode: false,
+  xml_format: true,
+  always_send_full_tree: true,
+  system_prompt: '',
+  comment_rules_json: DEFAULT_COMMENT_RULES_JSON
+};
+
 @Injectable({
   providedIn: 'root'
 })
@@ -38,27 +63,8 @@ export class StateService {
   private readonly wasmService = inject(WasmService);
   private readonly fileSystemService = inject(FileSystemService);
 
-  readonly scanOptions = signal<ScanOptionsWasm>({
-    use_gitignore: true,
-    ignore_binary: true,
-    ignore_lockfiles: true,
-    whitelist_extensions: [],
-    manual_excludes: ['.git', 'node_modules', 'dist', 'target', '.angular'],
-    gitignore_disabled_rules: [],
-    binary_extensions: ['.png', '.jpg', '.jpeg', '.gif', '.ico', '.pdf', '.zip', '.exe', '.dll', '.so', '.dylib', '.wasm'],
-    lockfiles_excludes: ['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'Cargo.lock', 'go.sum']
-  });
-
-  readonly transformOptions = signal<TransformOptionsWasm>({
-    strip_comments: false,
-    compress_whitespace: false,
-    sanitize_secrets: false,
-    skeleton_mode: false,
-    xml_format: true,
-    always_send_full_tree: true,
-    system_prompt: '',
-    comment_rules_json: DEFAULT_COMMENT_RULES_JSON
-  });
+  readonly scanOptions = signal<ScanOptionsWasm>(this.loadScanOptions());
+  readonly transformOptions = signal<TransformOptionsWasm>(this.loadTransformOptions());
 
   readonly selectedPaths = signal<Set<string>>(new Set());
   readonly focusedPath = signal<string | null>(null);
@@ -86,6 +92,16 @@ export class StateService {
   readonly totalSizeKb = computed(() => {
     return Math.round((this.totalSizeBytes() / 1024) * 10) / 10;
   });
+
+  constructor() {
+    effect(() => {
+      localStorage.setItem(STORAGE_KEY_SCAN, JSON.stringify(this.scanOptions()));
+    });
+
+    effect(() => {
+      localStorage.setItem(STORAGE_KEY_TRANSFORM, JSON.stringify(this.transformOptions()));
+    });
+  }
 
   setFocusedPath(relPath: string | null): void {
     this.focusedPath.set(relPath);
@@ -238,5 +254,29 @@ export class StateService {
     for (const child of node.children) {
       this.collectSelectedFileNodes(child, selectedSet, acc);
     }
+  }
+
+  private loadScanOptions(): ScanOptionsWasm {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_SCAN);
+      if (saved) {
+        return { ...DEFAULT_SCAN_OPTIONS, ...JSON.parse(saved) };
+      }
+    } catch {
+
+    }
+    return DEFAULT_SCAN_OPTIONS;
+  }
+
+  private loadTransformOptions(): TransformOptionsWasm {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_TRANSFORM);
+      if (saved) {
+        return { ...DEFAULT_TRANSFORM_OPTIONS, ...JSON.parse(saved) };
+      }
+    } catch {
+
+    }
+    return DEFAULT_TRANSFORM_OPTIONS;
   }
 }

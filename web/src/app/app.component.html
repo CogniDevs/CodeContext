@@ -1,5 +1,20 @@
-<div class="app-container">
-  <app-header />
+<div
+  class="app-container"
+  (dragover)="onDragOver($event)"
+  (dragleave)="onDragLeave($event)"
+  (drop)="onDrop($event)"
+>
+  @if (isDragOver()) {
+    <div class="drag-drop-overlay">
+      <div class="overlay-card">
+        <span class="icon icon-folder-open large-icon"></span>
+        <h2>Перетащите папку проекта сюда</h2>
+        <p>CodeContext автоматически прочитает структуру и файлы</p>
+      </div>
+    </div>
+  }
+
+  <app-header (openSettingsRequested)="openSettingsModal()" />
 
   <main class="app-main">
     <section class="pane-tree">
@@ -7,9 +22,16 @@
     </section>
 
     <section class="pane-controls">
-      <app-control-panel />
+      <app-control-panel
+        #controlPanel
+        (addPromptRequested)="openAddPromptModal()"
+        (editPromptRequested)="openEditPromptModal($event)"
+      />
     </section>
   </main>
 
   <app-footer />
+
+  <app-settings-modal #settingsModal />
+  <app-prompt-modal #promptModal (promptSaved)="onPromptSaved($event)" />
 </div>

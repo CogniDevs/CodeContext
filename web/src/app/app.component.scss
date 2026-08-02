@@ -1,0 +1,43 @@
+.drag-drop-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(14, 99, 156, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  pointer-events: none;
+}
+
+.overlay-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 48px;
+  background-color: var(--bg-surface);
+  border: 2px dashed var(--fg-accent);
+  border-radius: var(--radius-lg);
+  color: var(--fg-main);
+  box-shadow: var(--shadow-md);
+  text-align: center;
+
+  .large-icon {
+    width: 48px;
+    height: 48px;
+    color: var(--primary);
+  }
+
+  h2 {
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  p {
+    font-size: 13px;
+    color: var(--fg-muted);
+  }
+}
