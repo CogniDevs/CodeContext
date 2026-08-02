@@ -29,6 +29,7 @@ jobs:
         run: |
           cd codecontext_core
           wasm-pack build --target web --out-dir pkg -- --features wasm
+          rm -f pkg/.gitignore
 
       - name: Setup Node
         uses: actions/setup-node@v4

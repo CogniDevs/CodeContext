@@ -4,7 +4,7 @@
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
-    "build:wasm": "cd ../codecontext_core && wasm-pack build --target web --out-dir pkg -- --features wasm",
+    "build:wasm": "cd ../codecontext_core && wasm-pack build --target web --out-dir pkg -- --features wasm && rm -f pkg/.gitignore",
     "prebuild": "npm run build:wasm",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
