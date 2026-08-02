@@ -12,6 +12,21 @@ export interface FileNode {
   rawFile?: File;
 }
 
+const DEFAULT_HARD_EXCLUDES = [
+  '.git',
+  'node_modules',
+  'dist',
+  'target',
+  '.angular',
+  'build',
+  'out',
+  '__pycache__',
+  '.venv',
+  'venv',
+  '.idea',
+  '.vscode'
+];
+
 @Injectable({
   providedIn: 'root'
 })
@@ -32,7 +47,8 @@ export class FileSystemService {
       const handle = await (window as any).showDirectoryPicker();
       this.currentProjectName.set(handle.name);
 
-      const root = await this.scanDirectoryHandle(handle, handle.name, '', options);
+      const effectiveOptions = await this.prepareScanOptions(handle, options);
+      const root = await this.scanDirectoryHandle(handle, handle.name, '', effectiveOptions);
       this.rootNode.set(root);
       return root;
     } finally {
@@ -52,6 +68,8 @@ export class FileSystemService {
       const rootName = firstPath.split('/')[0] || 'project';
       this.currentProjectName.set(rootName);
 
+      const effectiveOptions = this.ensureDefaultExcludes(options);
+
       const root: FileNode = {
         name: rootName,
         full_path: rootName,
@@ -70,7 +88,7 @@ export class FileSystemService {
           continue;
         }
 
-        if (this.wasmService.isIgnored(relPath, false, options)) {
+        if (this.checkIsIgnored(relPath, false, effectiveOptions)) {
           continue;
         }
 
@@ -112,14 +130,16 @@ export class FileSystemService {
 
       if (rootHandle) {
         this.currentProjectName.set(rootHandle.name);
-        const root = await this.scanDirectoryHandle(rootHandle, rootHandle.name, '', options);
+        const effectiveOptions = await this.prepareScanOptions(rootHandle, options);
+        const root = await this.scanDirectoryHandle(rootHandle, rootHandle.name, '', effectiveOptions);
         this.rootNode.set(root);
         return root;
       }
 
       if (rootEntry) {
         this.currentProjectName.set(rootEntry.name);
-        const root = await this.scanWebkitEntry(rootEntry, rootEntry.name, '', options);
+        const effectiveOptions = this.ensureDefaultExcludes(options);
+        const root = await this.scanWebkitEntry(rootEntry, rootEntry.name, '', effectiveOptions);
         this.rootNode.set(root);
         return root;
       }
@@ -147,6 +167,86 @@ export class FileSystemService {
     return '';
   }
 
+  private ensureDefaultExcludes(options: ScanOptionsWasm): ScanOptionsWasm {
+    const excludes = new Set([...DEFAULT_HARD_EXCLUDES, ...(options.manual_excludes || [])]);
+    return {
+      ...options,
+      manual_excludes: Array.from(excludes)
+    };
+  }
+
+  private async prepareScanOptions(
+    rootHandle: FileSystemDirectoryHandle,
+    options: ScanOptionsWasm
+  ): Promise<ScanOptionsWasm> {
+    const baseOptions = this.ensureDefaultExcludes(options);
+    if (!baseOptions.use_gitignore) {
+      return baseOptions;
+    }
+
+    const gitignoreRules = await this.parseGitignoreFromHandle(rootHandle);
+    if (gitignoreRules.length === 0) {
+      return baseOptions;
+    }
+
+    const mergedExcludes = new Set([...baseOptions.manual_excludes]);
+    for (const rule of gitignoreRules) {
+      if (!baseOptions.gitignore_disabled_rules.includes(rule)) {
+        mergedExcludes.add(rule);
+      }
+    }
+
+    return {
+      ...baseOptions,
+      manual_excludes: Array.from(mergedExcludes)
+    };
+  }
+
+  private async parseGitignoreFromHandle(dirHandle: FileSystemDirectoryHandle): Promise<string[]> {
+    try {
+      const fileHandle = await dirHandle.getFileHandle('.gitignore');
+      const file = await fileHandle.getFile();
+      const text = await file.text();
+      const rules: string[] = [];
+
+      for (let line of text.split('\n')) {
+        line = line.trim();
+        if (!line || line.startsWith('#')) {
+          continue;
+        }
+        if (line.includes(' #')) {
+          line = line.split(' #')[0].trim();
+        }
+        if (line) {
+          rules.push(line);
+        }
+      }
+
+      return rules;
+    } catch {
+      return [];
+    }
+  }
+
+  private checkIsIgnored(relPath: string, isDir: boolean, options: ScanOptionsWasm): boolean {
+    const cleanPath = relPath.replace(/\\/g, '/');
+    const parts = cleanPath.split('/');
+    const name = parts[parts.length - 1];
+
+    if (DEFAULT_HARD_EXCLUDES.includes(name) || DEFAULT_HARD_EXCLUDES.includes(cleanPath)) {
+      return true;
+    }
+
+    for (const exclude of options.manual_excludes) {
+      const cleanExclude = exclude.trim().replace(/\/$/, '');
+      if (cleanExclude && (parts.includes(cleanExclude) || cleanPath === cleanExclude || cleanPath.startsWith(cleanExclude + '/'))) {
+        return true;
+      }
+    }
+
+    return this.wasmService.isIgnored(relPath, isDir, options);
+  }
+
   private async scanDirectoryHandle(
     dirHandle: FileSystemDirectoryHandle,
     name: string,
@@ -163,8 +263,12 @@ export class FileSystemService {
     };
 
     const entries: Array<[string, FileSystemHandle]> = [];
-    for await (const entry of (dirHandle as any).entries()) {
-      entries.push(entry);
+    try {
+      for await (const entry of (dirHandle as any).entries()) {
+        entries.push(entry);
+      }
+    } catch {
+      return currentNode;
     }
 
     entries.sort(([nameA, handleA], [nameB, handleB]) => {
@@ -176,38 +280,59 @@ export class FileSystemService {
       return nameA.localeCompare(nameB);
     });
 
+    const dirEntries: Array<[string, FileSystemDirectoryHandle]> = [];
+    const fileEntries: Array<[string, FileSystemFileHandle]> = [];
+
     for (const [entryName, handle] of entries) {
       const childRelPath = relPath ? `${relPath}/${entryName}` : entryName;
       const isDir = handle.kind === 'directory';
 
-      if (this.wasmService.isIgnored(childRelPath, isDir, options)) {
+      if (this.checkIsIgnored(childRelPath, isDir, options)) {
         continue;
       }
 
       if (isDir) {
-        const childNode = await this.scanDirectoryHandle(
-          handle as FileSystemDirectoryHandle,
-          entryName,
-          childRelPath,
-          options
-        );
-        currentNode.children.push(childNode);
+        dirEntries.push([entryName, handle as FileSystemDirectoryHandle]);
       } else {
-        const fileHandle = handle as FileSystemFileHandle;
-        const file = await fileHandle.getFile();
-
-        currentNode.children.push({
-          name: entryName,
-          full_path: `${currentNode.full_path}/${entryName}`,
-          rel_path: childRelPath,
-          is_dir: false,
-          size: file.size,
-          children: [],
-          fileHandle
-        });
+        fileEntries.push([entryName, handle as FileSystemFileHandle]);
       }
     }
 
+    for (const [entryName, handle] of dirEntries) {
+      const childRelPath = relPath ? `${relPath}/${entryName}` : entryName;
+      const childNode = await this.scanDirectoryHandle(handle, entryName, childRelPath, options);
+      currentNode.children.push(childNode);
+    }
+
+    const fileNodes = await Promise.all(
+      fileEntries.map(async ([entryName, handle]) => {
+        const childRelPath = relPath ? `${relPath}/${entryName}` : entryName;
+        try {
+          const file = await handle.getFile();
+          return {
+            name: entryName,
+            full_path: `${currentNode.full_path}/${entryName}`,
+            rel_path: childRelPath,
+            is_dir: false,
+            size: file.size,
+            children: [],
+            fileHandle: handle
+          } as FileNode;
+        } catch {
+          return {
+            name: entryName,
+            full_path: `${currentNode.full_path}/${entryName}`,
+            rel_path: childRelPath,
+            is_dir: false,
+            size: 0,
+            children: [],
+            fileHandle: handle
+          } as FileNode;
+        }
+      })
+    );
+
+    currentNode.children.push(...fileNodes);
     return currentNode;
   }
 
@@ -227,9 +352,22 @@ export class FileSystemService {
     };
 
     const dirReader = entry.createReader();
-    const entries: any[] = await new Promise((resolve) => {
-      dirReader.readEntries((results: any[]) => resolve(results));
-    });
+    const entries: any[] = [];
+
+    try {
+      let readBatch: any[];
+      do {
+        readBatch = await new Promise((resolve) => {
+          dirReader.readEntries(
+            (results: any[]) => resolve(results || []),
+            () => resolve([])
+          );
+        });
+        entries.push(...readBatch);
+      } while (readBatch.length > 0);
+    } catch {
+      return currentNode;
+    }
 
     entries.sort((a, b) => {
       if (a.isDirectory !== b.isDirectory) {
@@ -238,31 +376,58 @@ export class FileSystemService {
       return a.name.localeCompare(b.name);
     });
 
+    const dirEntries: any[] = [];
+    const fileEntries: any[] = [];
+
     for (const childEntry of entries) {
       const childRelPath = relPath ? `${relPath}/${childEntry.name}` : childEntry.name;
       const isDir = childEntry.isDirectory;
 
-      if (this.wasmService.isIgnored(childRelPath, isDir, options)) {
+      if (this.checkIsIgnored(childRelPath, isDir, options)) {
         continue;
       }
 
       if (isDir) {
-        const childNode = await this.scanWebkitEntry(childEntry, childEntry.name, childRelPath, options);
-        currentNode.children.push(childNode);
+        dirEntries.push(childEntry);
       } else {
-        const file: File = await new Promise((resolve) => childEntry.file(resolve));
-        currentNode.children.push({
-          name: childEntry.name,
-          full_path: `${currentNode.full_path}/${childEntry.name}`,
-          rel_path: childRelPath,
-          is_dir: false,
-          size: file.size,
-          children: [],
-          rawFile: file
-        });
+        fileEntries.push(childEntry);
       }
     }
 
+    for (const childEntry of dirEntries) {
+      const childRelPath = relPath ? `${relPath}/${childEntry.name}` : childEntry.name;
+      const childNode = await this.scanWebkitEntry(childEntry, childEntry.name, childRelPath, options);
+      currentNode.children.push(childNode);
+    }
+
+    const fileNodes = await Promise.all(
+      fileEntries.map(async (childEntry) => {
+        const childRelPath = relPath ? `${relPath}/${childEntry.name}` : childEntry.name;
+        try {
+          const file: File = await new Promise((resolve, reject) => childEntry.file(resolve, reject));
+          return {
+            name: childEntry.name,
+            full_path: `${currentNode.full_path}/${childEntry.name}`,
+            rel_path: childRelPath,
+            is_dir: false,
+            size: file.size,
+            children: [],
+            rawFile: file
+          } as FileNode;
+        } catch {
+          return {
+            name: childEntry.name,
+            full_path: `${currentNode.full_path}/${childEntry.name}`,
+            rel_path: childRelPath,
+            is_dir: false,
+            size: 0,
+            children: []
+          } as FileNode;
+        }
+      })
+    );
+
+    currentNode.children.push(...fileNodes);
     return currentNode;
   }
 

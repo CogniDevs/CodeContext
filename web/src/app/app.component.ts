@@ -52,7 +52,7 @@ export class AppComponent implements OnInit {
     this.isDragOver.set(false);
   }
 
-  async onDrop(event: DragEvent): void {
+  async onDrop(event: DragEvent): Promise<void> {
     event.preventDefault();
     event.stopPropagation();
     this.isDragOver.set(false);

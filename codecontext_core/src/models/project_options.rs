@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ScanOptions {
     pub use_gitignore: bool,
     pub ignore_binary: bool,
@@ -20,7 +21,18 @@ impl Default for ScanOptions {
             ignore_binary: true,
             ignore_lockfiles: true,
             whitelist_extensions: Vec::new(),
-            manual_excludes: Vec::new(),
+            manual_excludes: vec![
+                ".git".to_string(),
+                "node_modules".to_string(),
+                "dist".to_string(),
+                "target".to_string(),
+                ".angular".to_string(),
+                "build".to_string(),
+                "out".to_string(),
+                "__pycache__".to_string(),
+                ".venv".to_string(),
+                "venv".to_string(),
+            ],
             gitignore_disabled_rules: Vec::new(),
             binary_extensions: Vec::new(),
             lockfiles_excludes: Vec::new(),
@@ -30,6 +42,7 @@ impl Default for ScanOptions {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TransformOptions {
     pub strip_comments: bool,
     pub compress_whitespace: bool,

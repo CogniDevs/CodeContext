@@ -39,7 +39,20 @@ const DEFAULT_SCAN_OPTIONS: ScanOptionsWasm = {
   ignore_binary: true,
   ignore_lockfiles: true,
   whitelist_extensions: [],
-  manual_excludes: ['.git', 'node_modules', 'dist', 'target', '.angular'],
+  manual_excludes: [
+    '.git',
+    'node_modules',
+    'dist',
+    'target',
+    '.angular',
+    'build',
+    'out',
+    '__pycache__',
+    '.venv',
+    'venv',
+    '.idea',
+    '.vscode'
+  ],
   gitignore_disabled_rules: [],
   binary_extensions: ['.png', '.jpg', '.jpeg', '.gif', '.ico', '.pdf', '.zip', '.exe', '.dll', '.so', '.dylib', '.wasm'],
   lockfiles_excludes: ['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'Cargo.lock', 'go.sum']
@@ -75,7 +88,7 @@ export class StateService {
 
   readonly tokenCount = computed(() => {
     const payload = this.generatedPayload();
-    if (!payload) {
+    if (!payload || payload.startsWith('[')) {
       return 0;
     }
     return this.wasmService.countTokens(payload);
@@ -173,10 +186,21 @@ export class StateService {
       return '';
     }
 
+    const selectedSet = this.selectedPaths();
+    if (selectedSet.size === 0) {
+      this.generatedPayload.set('');
+      return '';
+    }
+
+    if (selectedSet.size > 2000 || this.totalSizeBytes() > 30 * 1024 * 1024) {
+      const msg = `[Выбрано слишком много элементов (${selectedSet.size} файлов / ${this.totalSizeKb()} KB). Для защиты от зависания браузера автоматический сбор контекста приостановлен. Снимите выделение с папок с бинарными/большими файлами или выберите нужные исходные файлы вручную.]`;
+      this.generatedPayload.set(msg);
+      return msg;
+    }
+
     this.isGenerating.set(true);
 
     try {
-      const selectedSet = this.selectedPaths();
       const filesToRead: FileNode[] = [];
       this.collectSelectedFileNodes(root, selectedSet, filesToRead);
 
@@ -260,7 +284,12 @@ export class StateService {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_SCAN);
       if (saved) {
-        return { ...DEFAULT_SCAN_OPTIONS, ...JSON.parse(saved) };
+        const parsed = JSON.parse(saved);
+        return {
+          ...DEFAULT_SCAN_OPTIONS,
+          ...parsed,
+          manual_excludes: Array.from(new Set([...DEFAULT_SCAN_OPTIONS.manual_excludes, ...(parsed.manual_excludes || [])]))
+        };
       }
     } catch {
 

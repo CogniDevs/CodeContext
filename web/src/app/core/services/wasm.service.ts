@@ -81,7 +81,18 @@ export class WasmService {
     if (!this.wasmModule?.is_ignored_wasm) {
       return false;
     }
-    return this.wasmModule.is_ignored_wasm(relPath, isDir, JSON.stringify(options));
+    const cleanOptions: ScanOptionsWasm = {
+      use_gitignore: options?.use_gitignore ?? true,
+      ignore_binary: options?.ignore_binary ?? true,
+      ignore_lockfiles: options?.ignore_lockfiles ?? true,
+      whitelist_extensions: options?.whitelist_extensions || [],
+      manual_excludes: options?.manual_excludes || [],
+      gitignore_disabled_rules: options?.gitignore_disabled_rules || [],
+      binary_extensions: options?.binary_extensions || [],
+      lockfiles_excludes: options?.lockfiles_excludes || [],
+      output_file_path: options?.output_file_path ?? null
+    };
+    return this.wasmModule.is_ignored_wasm(relPath, isDir, JSON.stringify(cleanOptions));
   }
 
   traceDependencies(rootDir: string, targetRelPath: string, content: string): string[] {
@@ -101,12 +112,22 @@ export class WasmService {
     if (!this.wasmModule?.build_payload_wasm) {
       return '';
     }
+    const cleanOptions: TransformOptionsWasm = {
+      strip_comments: options?.strip_comments ?? false,
+      compress_whitespace: options?.compress_whitespace ?? false,
+      sanitize_secrets: options?.sanitize_secrets ?? false,
+      skeleton_mode: options?.skeleton_mode ?? false,
+      xml_format: options?.xml_format ?? true,
+      always_send_full_tree: options?.always_send_full_tree ?? true,
+      system_prompt: options?.system_prompt || '',
+      comment_rules_json: options?.comment_rules_json ?? null
+    };
     return this.wasmModule.build_payload_wasm(
       rootName,
       rootNodeJson,
       JSON.stringify(files),
       JSON.stringify(selectedPaths),
-      JSON.stringify(options)
+      JSON.stringify(cleanOptions)
     );
   }
 }
