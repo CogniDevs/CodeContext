@@ -6,9 +6,15 @@
   padding-right: 8px;
   border-radius: var(--radius-sm);
   user-select: none;
+  cursor: pointer;
 
   &:hover {
     background-color: var(--bg-hover);
+  }
+
+  &.focused {
+    background-color: var(--bg-selected);
+    border: 1px solid var(--primary);
   }
 }
 

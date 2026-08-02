@@ -2,6 +2,35 @@ import { Injectable, inject, signal, computed } from '@angular/core';
 import { WasmService, ScanOptionsWasm, TransformOptionsWasm } from './wasm.service';
 import { FileSystemService, FileNode } from './file-system.service';
 
+const DEFAULT_COMMENT_RULES_JSON = JSON.stringify({
+  rules: {
+    c_style: {
+      extensions: [
+        '.js', '.jsx', '.ts', '.tsx', '.c', '.cpp', '.h', '.hpp', '.go', '.rs',
+        '.java', '.cs', '.php', '.css', '.scss', '.dart', '.kt', '.kts'
+      ],
+      pattern: '("(?:\\\\.|[^"\\\\])*")|(\'(?:\\\\.|[^\'\\\\])*\')|(`(?:\\\\.|[^`\\\\])*`)|(//.*?$)|(/\\*[\\s\\S]*?\\*/)'
+    },
+    python_style: {
+      extensions: ['.py', '.ipynb'],
+      hash_pattern: '("(?:\\\\.|[^"\\\\])*")|(\'(?:\\\\.|[^\'\\\\])*\')|(#.*?$)',
+      docstring_pattern: '^\\s*("""[\\s\\S]*?"""|\'\'\'[\\s\\S]*?\'\'\')\\s*$'
+    },
+    xml_style: {
+      extensions: ['.html', '.xml', '.svelte', '.vue', '.astro', '.svg'],
+      pattern: '("(?:\\\\.|[^"\\\\])*")|(\'(?:\\\\.|[^\'\\\\])*\')|(<!--[\\s\\S]*?-->)'
+    },
+    hash_style: {
+      extensions: ['.sh', '.bash', '.yaml', '.yml', '.toml', '.ini', 'makefile', 'dockerfile', '.rb'],
+      pattern: '("(?:\\\\.|[^"\\\\])*")|(\'(?:\\\\.|[^\'\\\\])*\')|(#.*?$)'
+    },
+    sql_style: {
+      extensions: ['.sql'],
+      pattern: '("(?:\\\\.|[^"\\\\])*")|(\'(?:\\\\.|[^\'\\\\])*\')|(--.*?$)|(/\\*[\\s\\S]*?\\*/)'
+    }
+  }
+});
+
 @Injectable({
   providedIn: 'root'
 })
@@ -27,10 +56,12 @@ export class StateService {
     skeleton_mode: false,
     xml_format: true,
     always_send_full_tree: true,
-    system_prompt: ''
+    system_prompt: '',
+    comment_rules_json: DEFAULT_COMMENT_RULES_JSON
   });
 
   readonly selectedPaths = signal<Set<string>>(new Set());
+  readonly focusedPath = signal<string | null>(null);
   readonly generatedPayload = signal<string>('');
   readonly isGenerating = signal<boolean>(false);
 
@@ -56,6 +87,10 @@ export class StateService {
     return Math.round((this.totalSizeBytes() / 1024) * 10) / 10;
   });
 
+  setFocusedPath(relPath: string | null): void {
+    this.focusedPath.set(relPath);
+  }
+
   togglePathSelection(relPath: string, isSelected: boolean): void {
     this.selectedPaths.update((set) => {
       const next = new Set(set);
@@ -79,6 +114,38 @@ export class StateService {
       this.collectAllFilePaths(root, newSet);
     }
     this.selectedPaths.set(newSet);
+  }
+
+  async traceDependenciesForFocusedFile(): Promise<number> {
+    const focusedRelPath = this.focusedPath();
+    const root = this.fileSystemService.rootNode();
+    const rootName = this.fileSystemService.currentProjectName() || 'project';
+
+    if (!focusedRelPath || !root) {
+      return 0;
+    }
+
+    const focusedNode = this.findNodeByRelPath(root, focusedRelPath);
+    if (!focusedNode || focusedNode.is_dir) {
+      return 0;
+    }
+
+    const content = await this.fileSystemService.getFileContent(focusedNode);
+    const deps = this.wasmService.traceDependencies(rootName, focusedRelPath, content);
+
+    if (deps && deps.length > 0) {
+      this.selectedPaths.update((set) => {
+        const next = new Set(set);
+        for (const dep of deps) {
+          next.add(dep);
+        }
+        return next;
+      });
+      await this.generatePayload();
+      return deps.length;
+    }
+
+    return 0;
   }
 
   async generatePayload(): Promise<string> {
@@ -129,6 +196,19 @@ export class StateService {
     } finally {
       this.isGenerating.set(false);
     }
+  }
+
+  private findNodeByRelPath(node: FileNode, relPath: string): FileNode | null {
+    if (node.rel_path === relPath) {
+      return node;
+    }
+    for (const child of node.children) {
+      const found = this.findNodeByRelPath(child, relPath);
+      if (found) {
+        return found;
+      }
+    }
+    return null;
   }
 
   private calculateSelectedSize(node: FileNode): number {

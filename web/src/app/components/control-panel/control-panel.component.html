@@ -3,13 +3,19 @@
     <h3>Параметры контекста и ИИ</h3>
 
     <div class="form-group">
-      <label class="form-label">Шаблон задачи (Скилл ИИ):</label>
+      <div class="label-row">
+        <label class="form-label">Шаблон задачи (Скилл ИИ):</label>
+        <div class="btn-group">
+          <button class="btn btn-secondary btn-xs" (click)="onAddPrompt()">➕ Добавить</button>
+          <button class="btn btn-secondary btn-xs" (click)="onEditPrompt()">⚙ Изменить</button>
+        </div>
+      </div>
       <select
         class="form-control"
         [ngModel]="selectedPromptKey"
         (ngModelChange)="onPromptChange($event)"
       >
-        @for (preset of promptPresets; track preset.key) {
+        @for (preset of promptPresets(); track preset.key) {
           <option [value]="preset.key">{{ preset.title }}</option>
         }
       </select>

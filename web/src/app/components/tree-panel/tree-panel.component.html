@@ -5,6 +5,16 @@
       <div class="actions-row">
         <button class="btn btn-secondary btn-sm" (click)="selectAll(true)">Выделить всё</button>
         <button class="btn btn-secondary btn-sm" (click)="selectAll(false)">Снять выделение</button>
+        <button
+          class="btn btn-secondary btn-sm"
+          [disabled]="!stateService.focusedPath()"
+          (click)="onTraceDependencies()"
+          title="Выделить все локальные импорты для выбранного файла"
+        >
+          Импорты
+        </button>
+        <button class="btn btn-secondary btn-sm" (click)="setExpandAll(true)">Развернуть</button>
+        <button class="btn btn-secondary btn-sm" (click)="setExpandAll(false)">Свернуть</button>
       </div>
     </div>
 
@@ -24,7 +34,11 @@
       </div>
     } @else {
       @if (fileSystemService.rootNode(); as root) {
-        <app-tree-node [node]="root" [searchQuery]="searchQuery" />
+        <app-tree-node
+          [node]="root"
+          [searchQuery]="searchQuery"
+          [isExpanded]="isAllExpanded"
+        />
       } @else {
         <div class="tree-state-msg text-muted">
           <p>Проект не выбран.</p>

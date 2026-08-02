@@ -31,6 +31,11 @@
       />
     </label>
 
+    <button class="btn btn-secondary" (click)="onOpenSettings()">
+      <span class="icon icon-edit"></span>
+      <span>Параметры</span>
+    </button>
+
     <button class="btn btn-secondary theme-toggle" (click)="toggleTheme()">
       @if (themeService.currentTheme() === 'dark') {
         <span class="icon icon-sun"></span>

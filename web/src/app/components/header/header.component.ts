@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, output } from '@angular/core';
 import { ThemeService } from '../../core/services/theme.service';
 import { FileSystemService } from '../../core/services/file-system.service';
 import { StateService } from '../../core/services/state.service';
@@ -13,6 +13,8 @@ export class HeaderComponent {
   readonly themeService = inject(ThemeService);
   readonly fileSystemService = inject(FileSystemService);
   readonly stateService = inject(StateService);
+
+  readonly openSettingsRequested = output<void>();
 
   async onOpenDirectory(): Promise<void> {
     try {
@@ -34,6 +36,10 @@ export class HeaderComponent {
         this.stateService.generatePayload();
       });
     }
+  }
+
+  onOpenSettings(): void {
+    this.openSettingsRequested.emit();
   }
 
   toggleTheme(): void {

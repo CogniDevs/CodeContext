@@ -17,9 +17,21 @@ export class TreePanelComponent {
   readonly stateService = inject(StateService);
 
   searchQuery = '';
+  isAllExpanded = true;
 
   selectAll(check: boolean): void {
     this.stateService.selectAllFiles(check);
     this.stateService.generatePayload();
+  }
+
+  setExpandAll(expand: boolean): void {
+    this.isAllExpanded = expand;
+  }
+
+  async onTraceDependencies(): Promise<void> {
+    const count = await this.stateService.traceDependenciesForFocusedFile();
+    if (count === 0) {
+      alert('Для выбранного файла не найдено локальных импортов.');
+    }
   }
 }
