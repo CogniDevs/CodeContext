@@ -46,6 +46,8 @@ export class FileSystemService {
   readonly isScanning = signal<boolean>(false);
   readonly rootNode = signal<FileNode | null>(null);
 
+  private readonly fileContentCache = new Map<string, string>();
+
   cleanNodeForWasm(node: FileNode): any {
     return {
       name: node.name,
@@ -71,6 +73,7 @@ export class FileSystemService {
 
       const effectiveOptions = await this.prepareScanOptions(handle, options);
       const root = await this.scanDirectoryHandle(handle, handle.name, '', effectiveOptions);
+      this.fileContentCache.clear();
       this.rootNode.set(root);
       return root;
     } finally {
@@ -119,6 +122,7 @@ export class FileSystemService {
         this.addFileToTree(root, relPath.split('/'), file);
       }
 
+      this.fileContentCache.clear();
       this.rootNode.set(root);
       return root;
     } finally {
@@ -158,6 +162,7 @@ export class FileSystemService {
         this.currentProjectName.set(rootHandle.name);
         const effectiveOptions = await this.prepareScanOptions(rootHandle, options);
         const root = await this.scanDirectoryHandle(rootHandle, rootHandle.name, '', effectiveOptions);
+        this.fileContentCache.clear();
         this.rootNode.set(root);
         return root;
       }
@@ -166,8 +171,23 @@ export class FileSystemService {
         this.currentProjectName.set(rootEntry.name);
         const effectiveOptions = this.ensureDefaultExcludes(options);
         const root = await this.scanWebkitEntry(rootEntry, rootEntry.name, '', effectiveOptions);
+        this.fileContentCache.clear();
         this.rootNode.set(root);
         return root;
+      }
+
+      const fileList: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === 'file') {
+          const file = item.getAsFile();
+          if (file) {
+            fileList.push(file);
+          }
+        }
+      }
+      if (fileList.length > 0) {
+        return await this.readFromFiles(fileList, options);
       }
 
       return null;
@@ -181,6 +201,10 @@ export class FileSystemService {
       return '';
     }
 
+    if (this.fileContentCache.has(node.rel_path)) {
+      return this.fileContentCache.get(node.rel_path)!;
+    }
+
     const dotIdx = node.name.lastIndexOf('.');
     if (dotIdx !== -1) {
       const ext = node.name.substring(dotIdx).toLowerCase();
@@ -189,16 +213,19 @@ export class FileSystemService {
       }
     }
 
+    let content = '';
     if (node.fileHandle) {
       const file = await node.fileHandle.getFile();
-      return await file.text();
+      content = await file.text();
+    } else if (node.rawFile) {
+      content = await node.rawFile.text();
     }
 
-    if (node.rawFile) {
-      return await node.rawFile.text();
+    if (content) {
+      this.fileContentCache.set(node.rel_path, content);
     }
 
-    return '';
+    return content;
   }
 
   private ensureDefaultExcludes(options: ScanOptionsWasm): ScanOptionsWasm {

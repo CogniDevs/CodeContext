@@ -26,3 +26,4 @@ out-tsc/
 .vscode/
 .DS_Store
 Thumbs.db
+build/

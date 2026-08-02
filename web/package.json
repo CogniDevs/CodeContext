@@ -5,6 +5,7 @@
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
+    "build:wasm": "cd ../codecontext_core && wasm-pack build --target web --out-dir pkg -- --features wasm",
     "watch": "ng build --watch --configuration development",
     "test": "ng test"
   },

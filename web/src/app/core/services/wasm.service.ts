@@ -95,11 +95,17 @@ export class WasmService {
     return this.wasmModule.is_ignored_wasm(relPath, isDir, JSON.stringify(cleanOptions));
   }
 
-  traceDependencies(rootDir: string, targetRelPath: string, content: string): string[] {
+  traceDependencies(
+    rootDir: string,
+    targetRelPath: string,
+    content: string,
+    allKnownPaths?: string[]
+  ): string[] {
     if (!this.wasmModule?.trace_dependencies_wasm) {
       return [];
     }
-    return this.wasmModule.trace_dependencies_wasm(rootDir, targetRelPath, content);
+    const knownPathsJson = allKnownPaths && allKnownPaths.length > 0 ? JSON.stringify(allKnownPaths) : null;
+    return this.wasmModule.trace_dependencies_wasm(rootDir, targetRelPath, content, knownPathsJson);
   }
 
   buildPayload(

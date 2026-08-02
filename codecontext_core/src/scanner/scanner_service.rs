@@ -1,4 +1,5 @@
 use crate::models::ScanOptions;
+#[cfg(not(target_arch = "wasm32"))]
 use ignore::gitignore::GitignoreBuilder;
 use regex::Regex;
 use std::path::Path;

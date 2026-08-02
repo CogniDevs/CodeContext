@@ -1,4 +1,4 @@
-import { Component, Input, inject } from '@angular/core';
+import { Component, Input, inject, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { StateService } from '../../../core/services/state.service';
 import { FileNode } from '../../../core/services/file-system.service';
@@ -8,7 +8,8 @@ import { FileNode } from '../../../core/services/file-system.service';
   standalone: true,
   imports: [CommonModule],
   templateUrl: './tree-node.component.html',
-  styleUrl: './tree-node.component.scss'
+  styleUrl: './tree-node.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class TreeNodeComponent {
   @Input({ required: true }) node!: FileNode;
@@ -43,18 +44,38 @@ export class TreeNodeComponent {
   }
 
   getSelectionState(node: FileNode): { checked: boolean; indeterminate: boolean } {
+    const selectedSet = this.stateService.selectedPaths();
     if (!node.is_dir) {
-      const isSel = this.stateService.selectedPaths().has(node.rel_path);
+      const isSel = selectedSet.has(node.rel_path);
       return { checked: isSel, indeterminate: false };
     }
-    const stats = this.getDescendantsStats(node);
-    if (stats.total === 0) {
+
+    let total = 0;
+    let selected = 0;
+
+    const traverse = (n: FileNode) => {
+      for (let i = 0; i < n.children.length; i++) {
+        const child = n.children[i];
+        if (!child.is_dir) {
+          total++;
+          if (selectedSet.has(child.rel_path)) {
+            selected++;
+          }
+        } else {
+          traverse(child);
+        }
+      }
+    };
+
+    traverse(node);
+
+    if (total === 0) {
       return { checked: false, indeterminate: false };
     }
-    if (stats.selected === stats.total) {
+    if (selected === total) {
       return { checked: true, indeterminate: false };
     }
-    if (stats.selected > 0) {
+    if (selected > 0) {
       return { checked: false, indeterminate: true };
     }
     return { checked: false, indeterminate: false };
@@ -70,32 +91,10 @@ export class TreeNodeComponent {
     if (!node.is_dir) {
       this.stateService.togglePathSelection(node.rel_path, check);
     } else {
-      for (const child of node.children) {
-        this.toggleNodeRecursive(child, check);
+      for (let i = 0; i < node.children.length; i++) {
+        this.toggleNodeRecursive(node.children[i], check);
       }
     }
-  }
-
-  private getDescendantsStats(node: FileNode): { total: number; selected: number } {
-    let total = 0;
-    let selected = 0;
-    const selectedSet = this.stateService.selectedPaths();
-
-    const traverse = (n: FileNode) => {
-      for (const child of n.children) {
-        if (!child.is_dir) {
-          total++;
-          if (selectedSet.has(child.rel_path)) {
-            selected++;
-          }
-        } else {
-          traverse(child);
-        }
-      }
-    };
-
-    traverse(node);
-    return { total, selected };
   }
 
   shouldShowNode(node: FileNode): boolean {
@@ -103,7 +102,11 @@ export class TreeNodeComponent {
     const q = this.searchQuery.toLowerCase();
     if (node.name.toLowerCase().includes(q)) return true;
     if (node.is_dir) {
-      return node.children.some(c => this.shouldShowNode(c));
+      for (let i = 0; i < node.children.length; i++) {
+        if (this.shouldShowNode(node.children[i])) {
+          return true;
+        }
+      }
     }
     return false;
   }

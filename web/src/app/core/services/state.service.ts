@@ -225,7 +225,8 @@ export class StateService {
     }
 
     const content = await this.fileSystemService.getFileContent(focusedNode);
-    const deps = this.wasmService.traceDependencies(rootName, focusedRelPath, content);
+    const allPaths = this.getAllFilePaths(root);
+    const deps = this.wasmService.traceDependencies(rootName, focusedRelPath, content, allPaths);
 
     if (deps && deps.length > 0) {
       this.selectedPaths.update((set) => {
@@ -310,6 +311,16 @@ export class StateService {
     } finally {
       this.isGenerating.set(false);
     }
+  }
+
+  private getAllFilePaths(node: FileNode, acc: string[] = []): string[] {
+    if (!node.is_dir) {
+      acc.push(node.rel_path);
+    }
+    for (const child of node.children) {
+      this.getAllFilePaths(child, acc);
+    }
+    return acc;
   }
 
   private findNodeByRelPath(node: FileNode, relPath: string): FileNode | null {

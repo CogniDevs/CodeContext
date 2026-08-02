@@ -3,8 +3,17 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 pub fn trace_dependencies(root_dir: &str, target_rel_path: &str, content: &str) -> HashSet<String> {
+    trace_dependencies_with_known_paths(root_dir, target_rel_path, content, None)
+}
+
+pub fn trace_dependencies_with_known_paths(
+    root_dir: &str,
+    target_rel_path: &str,
+    content: &str,
+    known_paths: Option<&HashSet<String>>,
+) -> HashSet<String> {
     let mut found = HashSet::new();
-    if root_dir.is_empty() || target_rel_path.is_empty() || content.is_empty() {
+    if target_rel_path.is_empty() || content.is_empty() {
         return found;
     }
 
@@ -18,11 +27,23 @@ pub fn trace_dependencies(root_dir: &str, target_rel_path: &str, content: &str) 
     let target_dir = full_target_path.parent().unwrap_or_else(|| Path::new(root_dir));
 
     let mut check_and_insert = |path: PathBuf| -> bool {
-        if path.is_file() {
-            if let Ok(rel) = path.strip_prefix(root_dir) {
-                found.insert(rel.to_string_lossy().replace('\\', "/"));
+        let rel_str = if root_dir.is_empty() {
+            path.to_string_lossy().replace('\\', "/")
+        } else if let Ok(rel) = path.strip_prefix(root_dir) {
+            rel.to_string_lossy().replace('\\', "/")
+        } else {
+            path.to_string_lossy().replace('\\', "/")
+        };
+        let clean_rel = rel_str.trim_start_matches('/').to_string();
+
+        if let Some(kp) = known_paths {
+            if kp.contains(&clean_rel) {
+                found.insert(clean_rel);
                 return true;
             }
+        } else if path.is_file() {
+            found.insert(clean_rel);
+            return true;
         }
         false
     };

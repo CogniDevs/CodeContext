@@ -18,7 +18,8 @@ declare module 'codecontext_core' {
   export function trace_dependencies_wasm(
     root_dir: string,
     target_rel_path: string,
-    content: string
+    content: string,
+    all_known_paths_json?: string | null
   ): string[];
   export function build_payload_wasm(
     root_name: string,

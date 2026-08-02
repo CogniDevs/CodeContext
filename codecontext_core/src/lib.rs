@@ -153,10 +153,20 @@ pub fn trace_dependencies_wasm(
     root_dir: &str,
     target_rel_path: &str,
     content: &str,
+    all_known_paths_json: Option<String>,
 ) -> Vec<String> {
-    services::trace_dependencies(root_dir, target_rel_path, content)
-        .into_iter()
-        .collect()
+    let known_paths: Option<HashSet<String>> = all_known_paths_json
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok());
+
+    services::dependency_service::trace_dependencies_with_known_paths(
+        root_dir,
+        target_rel_path,
+        content,
+        known_paths.as_ref(),
+    )
+    .into_iter()
+    .collect()
 }
 
 #[cfg(feature = "wasm")]
