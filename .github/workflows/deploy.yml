@@ -12,13 +12,23 @@ permissions:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build WASM Core
+        run: |
+          cd codecontext_core
+          wasm-pack build --target web --out-dir pkg -- --features wasm
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -26,10 +36,14 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        run: npm install
+        run: |
+          cd web
+          npm install
 
-      - name: Build
-        run: npx ng build --configuration production --base-href=/CodeContext/
+      - name: Build Angular
+        run: |
+          cd web
+          npx ng build --configuration production --base-href=/CodeContext/
 
       - name: Deploy
         uses: JamesIves/github-pages-deploy-action@v4

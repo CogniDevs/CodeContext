@@ -44,7 +44,7 @@
                 "output": "assets/icons/material"
               },
               {
-                "glob": "*",
+                "glob": "**/*",
                 "input": "../codecontext_core/pkg",
                 "output": "assets/wasm"
               }
@@ -118,7 +118,7 @@
                 "output": "assets/icons/material"
               },
               {
-                "glob": "*",
+                "glob": "**/*",
                 "input": "../codecontext_core/pkg",
                 "output": "assets/wasm"
               }

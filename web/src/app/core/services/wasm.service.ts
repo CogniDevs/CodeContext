@@ -38,10 +38,11 @@ export class WasmService {
     }
 
     try {
-      const jsUrl = new URL('assets/wasm/codecontext_core.js', document.baseURI).href;
-      const wasm = await import(/* @vite-ignore */ jsUrl);
+      const baseUrl = document.baseURI.endsWith('/') ? document.baseURI : document.baseURI + '/';
+      const jsUrl = new URL('assets/wasm/codecontext_core.js', baseUrl).href;
+      const wasm = await import(jsUrl);
 
-      const wasmUrl = new URL('assets/wasm/codecontext_core_bg.wasm', document.baseURI).href;
+      const wasmUrl = new URL('assets/wasm/codecontext_core_bg.wasm', baseUrl).href;
 
       if (typeof wasm.default === 'function') {
         await wasm.default(wasmUrl);
