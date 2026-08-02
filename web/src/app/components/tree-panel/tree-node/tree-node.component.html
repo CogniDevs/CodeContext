@@ -7,7 +7,7 @@
       (click)="onRowClick(node)"
     >
       @if (node.is_dir) {
-        <button class="btn-toggle" (click)="$event.stopPropagation(); isExpanded = !isExpanded">
+        <button class="btn-toggle" (click)="toggleExpand($event)">
           <span class="arrow" [class.expanded]="isExpanded">▶</span>
         </button>
         <span class="icon icon-folder"></span>
@@ -39,7 +39,6 @@
             [node]="child"
             [depth]="depth + 1"
             [searchQuery]="searchQuery"
-            [isExpanded]="isExpanded"
           />
         }
       </div>

@@ -51,6 +51,7 @@ export class StateService {
   readonly transformOptions = signal<TransformOptionsWasm>(this.loadTransformOptions());
 
   readonly selectedPaths = signal<Set<string>>(new Set());
+  readonly expandedPaths = signal<Set<string>>(new Set(['']));
   readonly focusedPath = signal<string | null>(null);
   readonly generatedPayload = signal<string>('');
   readonly isGenerating = signal<boolean>(false);
@@ -86,6 +87,13 @@ export class StateService {
 
     effect(() => {
       localStorage.setItem(STORAGE_KEY_TRANSFORM, JSON.stringify(this.transformOptions()));
+    });
+
+    effect(() => {
+      const root = this.fileSystemService.rootNode();
+      if (root) {
+        this.resetExpandedToRoot();
+      }
     });
   }
 
@@ -128,6 +136,48 @@ export class StateService {
       }
     } catch {
 
+    }
+  }
+
+  resetExpandedToRoot(): void {
+    this.expandedPaths.set(new Set(['']));
+  }
+
+  isPathExpanded(relPath: string): boolean {
+    return this.expandedPaths().has(relPath);
+  }
+
+  togglePathExpansion(relPath: string, expand?: boolean): void {
+    this.expandedPaths.update((set) => {
+      const next = new Set(set);
+      const shouldExpand = expand !== undefined ? expand : !next.has(relPath);
+      if (shouldExpand) {
+        next.add(relPath);
+      } else {
+        next.delete(relPath);
+      }
+      return next;
+    });
+  }
+
+  expandAllFolders(): void {
+    const root = this.fileSystemService.rootNode();
+    if (!root) return;
+    const allDirs = new Set<string>();
+    this.collectAllDirPaths(root, allDirs);
+    this.expandedPaths.set(allDirs);
+  }
+
+  collapseAllFolders(): void {
+    this.resetExpandedToRoot();
+  }
+
+  private collectAllDirPaths(node: FileNode, acc: Set<string>): void {
+    if (node.is_dir) {
+      acc.add(node.rel_path);
+      for (const child of node.children) {
+        this.collectAllDirPaths(child, acc);
+      }
     }
   }
 
@@ -220,13 +270,20 @@ export class StateService {
       this.collectSelectedFileNodes(root, selectedSet, filesToRead);
 
       const filesPayload: Array<[string, string]> = [];
-      for (const node of filesToRead) {
-        try {
-          const content = await this.fileSystemService.getFileContent(node);
-          filesPayload.push([node.rel_path, content]);
-        } catch {
-          filesPayload.push([node.rel_path, '[Error reading file]']);
-        }
+      const chunkSize = 25;
+      for (let i = 0; i < filesToRead.length; i += chunkSize) {
+        const chunk = filesToRead.slice(i, i + chunkSize);
+        const chunkResults = await Promise.all(
+          chunk.map(async (node) => {
+            try {
+              const content = await this.fileSystemService.getFileContent(node);
+              return [node.rel_path, content] as [string, string];
+            } catch {
+              return [node.rel_path, '[Error reading file]'] as [string, string];
+            }
+          })
+        );
+        filesPayload.push(...chunkResults);
       }
 
       const allAncestorPaths = new Set<string>();
@@ -238,9 +295,11 @@ export class StateService {
         }
       }
 
+      const cleanedRoot = this.fileSystemService.cleanNodeForWasm(root);
+
       const payload = this.wasmService.buildPayload(
         projectName,
-        JSON.stringify(root),
+        JSON.stringify(cleanedRoot),
         filesPayload,
         Array.from(allAncestorPaths),
         this.transformOptions()

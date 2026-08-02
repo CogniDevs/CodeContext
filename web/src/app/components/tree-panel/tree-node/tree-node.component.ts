@@ -14,12 +14,26 @@ export class TreeNodeComponent {
   @Input({ required: true }) node!: FileNode;
   @Input() depth = 0;
   @Input() searchQuery = '';
-  @Input() isExpanded = true;
 
   readonly stateService = inject(StateService);
 
+  get isExpanded(): boolean {
+    return this.stateService.isPathExpanded(this.node.rel_path);
+  }
+
+  toggleExpand(event?: Event): void {
+    if (event) {
+      event.stopPropagation();
+    }
+    if (this.node.is_dir) {
+      this.stateService.togglePathExpansion(this.node.rel_path);
+    }
+  }
+
   onRowClick(node: FileNode): void {
-    if (!node.is_dir) {
+    if (node.is_dir) {
+      this.toggleExpand();
+    } else {
       this.stateService.setFocusedPath(node.rel_path);
     }
   }
@@ -65,18 +79,22 @@ export class TreeNodeComponent {
   private getDescendantsStats(node: FileNode): { total: number; selected: number } {
     let total = 0;
     let selected = 0;
-    for (const child of node.children) {
-      if (!child.is_dir) {
-        total++;
-        if (this.stateService.selectedPaths().has(child.rel_path)) {
-          selected++;
+    const selectedSet = this.stateService.selectedPaths();
+
+    const traverse = (n: FileNode) => {
+      for (const child of n.children) {
+        if (!child.is_dir) {
+          total++;
+          if (selectedSet.has(child.rel_path)) {
+            selected++;
+          }
+        } else {
+          traverse(child);
         }
-      } else {
-        const sub = this.getDescendantsStats(child);
-        total += sub.total;
-        selected += sub.selected;
       }
-    }
+    };
+
+    traverse(node);
     return { total, selected };
   }
 

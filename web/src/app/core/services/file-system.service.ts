@@ -46,6 +46,17 @@ export class FileSystemService {
   readonly isScanning = signal<boolean>(false);
   readonly rootNode = signal<FileNode | null>(null);
 
+  cleanNodeForWasm(node: FileNode): any {
+    return {
+      name: node.name,
+      full_path: node.full_path,
+      rel_path: node.rel_path,
+      is_dir: node.is_dir,
+      size: node.size,
+      children: node.children ? node.children.map(c => this.cleanNodeForWasm(c)) : []
+    };
+  }
+
   async openDirectoryPicker(options: ScanOptionsWasm): Promise<FileNode | null> {
     if (!('showDirectoryPicker' in window)) {
       throw new Error('File System Access API is not supported in this browser.');

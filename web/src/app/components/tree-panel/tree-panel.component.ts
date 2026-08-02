@@ -17,7 +17,6 @@ export class TreePanelComponent {
   readonly stateService = inject(StateService);
 
   searchQuery = '';
-  isAllExpanded = true;
 
   selectAll(check: boolean): void {
     this.stateService.selectAllFiles(check);
@@ -25,7 +24,11 @@ export class TreePanelComponent {
   }
 
   setExpandAll(expand: boolean): void {
-    this.isAllExpanded = expand;
+    if (expand) {
+      this.stateService.expandAllFolders();
+    } else {
+      this.stateService.collapseAllFolders();
+    }
   }
 
   async onTraceDependencies(): Promise<void> {
