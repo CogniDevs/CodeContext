@@ -1,4 +1,5 @@
 import { Injectable, signal } from '@angular/core';
+import * as wasmModule from 'codecontext_core';
 
 export interface ScanOptionsWasm {
   use_gitignore: boolean;
@@ -38,11 +39,10 @@ export class WasmService {
     }
 
     try {
-      const wasm = await import('codecontext_core');
-      if (typeof wasm.default === 'function') {
-        await wasm.default();
+      if (typeof wasmModule.default === 'function') {
+        await wasmModule.default();
       }
-      this.wasmModule = wasm;
+      this.wasmModule = wasmModule;
       this.isLoaded.set(true);
     } catch (err: any) {
       console.error('[CodeContext WASM Init Error]', err);
@@ -117,7 +117,6 @@ export class WasmService {
     options: TransformOptionsWasm
   ): string {
     if (!this.wasmModule?.build_payload_wasm) {
-      console.warn('[WASM] build_payload_wasm not available');
       return '';
     }
     const cleanOptions: TransformOptionsWasm = {
