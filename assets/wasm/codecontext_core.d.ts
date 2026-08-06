@@ -3,6 +3,8 @@
 
 export function build_payload_wasm(root_name: string, root_node_json: string, files_json: string, selected_paths_json: string, options_json: string): string;
 
+export function calculate_pagerank_wasm(symbols_json: string, edges_json: string, damping: number, iterations: number): string;
+
 export function compress_whitespace_wasm(text: string): string;
 
 export function count_tokens_wasm(text: string): number;
@@ -20,6 +22,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly build_payload_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number];
+    readonly calculate_pagerank_wasm: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly compress_whitespace_wasm: (a: number, b: number) => [number, number];
     readonly count_tokens_wasm: (a: number, b: number) => number;
     readonly is_ignored_wasm: (a: number, b: number, c: number, d: number, e: number) => number;

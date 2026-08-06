@@ -2,6 +2,7 @@
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
 export const build_payload_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number];
+export const calculate_pagerank_wasm: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
 export const compress_whitespace_wasm: (a: number, b: number) => [number, number];
 export const count_tokens_wasm: (a: number, b: number) => number;
 export const is_ignored_wasm: (a: number, b: number, c: number, d: number, e: number) => number;

@@ -32,6 +32,30 @@ export function build_payload_wasm(root_name, root_node_json, files_json, select
 }
 
 /**
+ * @param {string} symbols_json
+ * @param {string} edges_json
+ * @param {number} damping
+ * @param {number} iterations
+ * @returns {string}
+ */
+export function calculate_pagerank_wasm(symbols_json, edges_json, damping, iterations) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passStringToWasm0(symbols_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(edges_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.calculate_pagerank_wasm(ptr0, len0, ptr1, len1, damping, iterations);
+        deferred3_0 = ret[0];
+        deferred3_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+}
+
+/**
  * @param {string} text
  * @returns {string}
  */
