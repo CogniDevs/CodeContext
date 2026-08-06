@@ -101,6 +101,32 @@ fn build_payload_py(
 }
 
 #[cfg(feature = "python")]
+#[pyfunction]
+fn calculate_pagerank_py(
+    symbols_json: &str,
+    edges_json: &str,
+    damping: f64,
+    iterations: usize,
+) -> PyResult<String> {
+    let symbols: Vec<(String, String, String)> = serde_json::from_str(symbols_json)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+    let edges: Vec<(String, String, f64)> = serde_json::from_str(edges_json)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+
+    let mut graph = services::graph_service::SymbolGraph::new();
+    for (file_path, name, symbol_type) in symbols {
+        graph.add_symbol(&file_path, &name, &symbol_type);
+    }
+    for (from_id, to_id, weight) in edges {
+        graph.add_dependency(&from_id, &to_id, weight);
+    }
+
+    let ranks = graph.calculate_pagerank(damping, iterations);
+    serde_json::to_string(&ranks)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+}
+
+#[cfg(feature = "python")]
 #[pymodule]
 fn codecontext_core(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(compress_whitespace_py, m)?)?;
@@ -110,6 +136,7 @@ fn codecontext_core(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(scan_directory_py, m)?)?;
     m.add_function(wrap_pyfunction!(trace_dependencies_py, m)?)?;
     m.add_function(wrap_pyfunction!(build_payload_py, m)?)?;
+    m.add_function(wrap_pyfunction!(calculate_pagerank_py, m)?)?;
     Ok(())
 }
 
@@ -200,4 +227,27 @@ pub fn build_payload_wasm(
         &selected_paths,
         &options,
     )
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn calculate_pagerank_wasm(
+    symbols_json: &str,
+    edges_json: &str,
+    damping: f64,
+    iterations: usize,
+) -> String {
+    let symbols: Vec<(String, String, String)> = serde_json::from_str(symbols_json).unwrap_or_default();
+    let edges: Vec<(String, String, f64)> = serde_json::from_str(edges_json).unwrap_or_default();
+
+    let mut graph = services::graph_service::SymbolGraph::new();
+    for (file_path, name, symbol_type) in symbols {
+        graph.add_symbol(&file_path, &name, &symbol_type);
+    }
+    for (from_id, to_id, weight) in edges {
+        graph.add_dependency(&from_id, &to_id, weight);
+    }
+
+    let ranks = graph.calculate_pagerank(damping, iterations);
+    serde_json::to_string(&ranks).unwrap_or_default()
 }

@@ -1,4 +1,5 @@
-use regex::Regex;
+use regex::{Captures, Regex};
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 struct SecretPattern {
@@ -7,6 +8,7 @@ struct SecretPattern {
 }
 
 static PATTERNS: OnceLock<Vec<SecretPattern>> = OnceLock::new();
+static HIGH_ENTROPY_TOKEN_RE: OnceLock<Regex> = OnceLock::new();
 
 fn get_patterns() -> &'static Vec<SecretPattern> {
     PATTERNS.get_or_init(|| {
@@ -71,10 +73,45 @@ fn get_patterns() -> &'static Vec<SecretPattern> {
     })
 }
 
+pub fn calculate_entropy(text: &str) -> f64 {
+    if text.is_empty() {
+        return 0.0;
+    }
+    let mut frequency = HashMap::new();
+    let total_count = text.chars().count() as f64;
+    for c in text.chars() {
+        *frequency.entry(c).or_insert(0usize) += 1;
+    }
+    let mut entropy = 0.0;
+    for &count in frequency.values() {
+        let probability = count as f64 / total_count;
+        entropy -= probability * probability.log2();
+    }
+    entropy
+}
+
 pub fn sanitize_secrets(text: &str) -> String {
     let mut result = text.to_string();
     for pattern in get_patterns() {
         result = pattern.regex.replace_all(&result, pattern.replacement).to_string();
     }
+
+    let token_re = HIGH_ENTROPY_TOKEN_RE.get_or_init(|| {
+        Regex::new(r#"\b[a-zA-Z0-9_\-\+/=]{21,}\b"#).unwrap()
+    });
+
+    result = token_re
+        .replace_all(&result, |caps: &Captures| {
+            let matched = caps.get(0).map_or("", |m| m.as_str());
+            if matched.starts_with("[REDACTED_") {
+                matched.to_string()
+            } else if calculate_entropy(matched) > 4.5 {
+                "[REDACTED_HIGH_ENTROPY_SECRET]".to_string()
+            } else {
+                matched.to_string()
+            }
+        })
+        .to_string();
+
     result
 }

@@ -23,6 +23,45 @@ struct CommentRulesConfig {
     rules: HashMap<String, CommentRule>,
 }
 
+fn strip_comments_treesitter(text: &str, language: tree_sitter::Language) -> Option<String> {
+    let mut parser = tree_sitter::Parser::new();
+    if parser.set_language(&language).is_err() {
+        return None;
+    }
+    let tree = parser.parse(text, None)?;
+    let root = tree.root_node();
+
+    let mut comment_ranges = Vec::new();
+    let mut stack = vec![root];
+    let mut cursor = root.walk();
+
+    while let Some(node) = stack.pop() {
+        let kind = node.kind();
+        if kind.contains("comment") {
+            comment_ranges.push((node.start_byte(), node.end_byte()));
+        } else {
+            for child in node.children(&mut cursor) {
+                stack.push(child);
+            }
+        }
+    }
+
+    if comment_ranges.is_empty() {
+        return Some(text.to_string());
+    }
+
+    comment_ranges.sort_by(|a, b| b.0.cmp(&a.0));
+    let mut bytes = text.as_bytes().to_vec();
+
+    for (start, end) in comment_ranges {
+        if start < bytes.len() && end <= bytes.len() && start < end {
+            bytes.drain(start..end);
+        }
+    }
+
+    String::from_utf8(bytes).ok()
+}
+
 pub fn strip_comments(text: &str, extension: &str, rules_json: Option<&str>) -> String {
     let ext = extension.trim_start_matches('.').to_lowercase();
     let ext_with_dot = format!(".{}", ext);
@@ -80,6 +119,24 @@ pub fn strip_comments(text: &str, extension: &str, rules_json: Option<&str>) -> 
                     }
                 }
             }
+        }
+    }
+
+    let ts_lang: Option<tree_sitter::Language> = match ext.as_str() {
+        "py" | "ipynb" => Some(tree_sitter_python::LANGUAGE.into()),
+        "rs" => Some(tree_sitter_rust::LANGUAGE.into()),
+        "ts" | "js" => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
+        "tsx" | "jsx" => Some(tree_sitter_typescript::LANGUAGE_TSX.into()),
+        "c" | "h" => Some(tree_sitter_c::LANGUAGE.into()),
+        "cpp" | "hpp" | "cc" | "cxx" => Some(tree_sitter_cpp::LANGUAGE.into()),
+        "go" => Some(tree_sitter_go::LANGUAGE.into()),
+        "java" => Some(tree_sitter_java::LANGUAGE.into()),
+        _ => None,
+    };
+
+    if let Some(lang) = ts_lang {
+        if let Some(cleaned) = strip_comments_treesitter(text, lang) {
+            return cleaned;
         }
     }
 

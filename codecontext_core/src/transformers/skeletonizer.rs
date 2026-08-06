@@ -1,7 +1,92 @@
 use regex::Regex;
 
+fn skeletonize_treesitter(
+    text: &str,
+    language: tree_sitter::Language,
+    is_python: bool,
+) -> Option<String> {
+    let mut parser = tree_sitter::Parser::new();
+    if parser.set_language(&language).is_err() {
+        return None;
+    }
+    let tree = parser.parse(text, None)?;
+    let root = tree.root_node();
+
+    let mut replacements = Vec::new();
+    let mut stack = vec![root];
+    let mut cursor = root.walk();
+
+    while let Some(node) = stack.pop() {
+        let kind = node.kind();
+        let parent_kind = node.parent().map_or("", |p| p.kind());
+
+        let is_func_or_method_parent = parent_kind.contains("function")
+            || parent_kind.contains("method")
+            || parent_kind.contains("declaration")
+            || parent_kind.contains("definition")
+            || parent_kind.contains("fn_")
+            || parent_kind == "function_item"
+            || parent_kind == "method_definition"
+            || parent_kind == "function_definition"
+            || parent_kind == "func_literal";
+
+        if (kind == "block" || kind == "statement_block" || kind == "compound_statement")
+            && is_func_or_method_parent
+        {
+            let start = node.start_byte();
+            let end = node.end_byte();
+            if start < end {
+                replacements.push((start, end, is_python));
+            }
+        } else {
+            for child in node.children(&mut cursor) {
+                stack.push(child);
+            }
+        }
+    }
+
+    if replacements.is_empty() {
+        return Some(text.to_string());
+    }
+
+    replacements.sort_by(|a, b| b.0.cmp(&a.0));
+    let mut bytes = text.as_bytes().to_vec();
+
+    for (start, end, py) in replacements {
+        if start < bytes.len() && end <= bytes.len() && start < end {
+            let replacement_text = if py {
+                "\n    ...\n".as_bytes()
+            } else {
+                " { ... }".as_bytes()
+            };
+            bytes.splice(start..end, replacement_text.iter().cloned());
+        }
+    }
+
+    String::from_utf8(bytes).ok()
+}
+
 pub fn skeletonize_code(text: &str, extension: &str) -> String {
     let ext = extension.trim_start_matches('.').to_lowercase();
+
+    let ts_lang: Option<(tree_sitter::Language, bool)> = match ext.as_str() {
+        "py" | "ipynb" => Some((tree_sitter_python::LANGUAGE.into(), true)),
+        "rs" => Some((tree_sitter_rust::LANGUAGE.into(), false)),
+        "ts" | "js" => Some((tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(), false)),
+        "tsx" | "jsx" => Some((tree_sitter_typescript::LANGUAGE_TSX.into(), false)),
+        "c" | "h" => Some((tree_sitter_c::LANGUAGE.into(), false)),
+        "cpp" | "hpp" | "cc" | "cxx" => Some((tree_sitter_cpp::LANGUAGE.into(), false)),
+        "go" => Some((tree_sitter_go::LANGUAGE.into(), false)),
+        "java" => Some((tree_sitter_java::LANGUAGE.into(), false)),
+        _ => None,
+    };
+
+    if let Some((lang, is_python)) = ts_lang {
+        if let Some(cleaned) = skeletonize_treesitter(text, lang, is_python) {
+            return cleaned;
+        }
+    }
+
     match ext.as_str() {
         "py" | "ipynb" => skeletonize_python(text),
         "js" | "jsx" | "ts" | "tsx" | "c" | "cpp" | "h" | "hpp" | "go" | "rs" | "java" | "cs"

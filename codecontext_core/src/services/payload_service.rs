@@ -2,6 +2,7 @@ use crate::models::{FileNode, TransformOptions};
 use crate::transformers::{
     compress_whitespace, sanitize_secrets, skeletonize_code, strip_comments,
 };
+use rayon::prelude::*;
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -11,7 +12,7 @@ pub struct FileInput {
 }
 
 fn escape_cdata(text: &str) -> String {
-    text.replace("]]>", "]]]]><![CDATA[>")
+    text.replace("]]]]><![CDATA[>", "]]]]]]><![CDATA[><![CDATA[>")
 }
 
 pub fn generate_ascii_tree(
@@ -58,6 +59,30 @@ pub fn generate_ascii_tree(
     lines
 }
 
+pub fn transform_file_content(file: &FileInput, options: &TransformOptions) -> String {
+    let ext = Path::new(&file.rel_path)
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+
+    let mut content = file.content.clone();
+
+    if options.skeleton_mode {
+        content = skeletonize_code(&content, ext);
+    }
+    if options.strip_comments {
+        content = strip_comments(&content, ext, options.comment_rules_json.as_deref());
+    }
+    if options.compress_whitespace {
+        content = compress_whitespace(&content);
+    }
+    if options.sanitize_secrets {
+        content = sanitize_secrets(&content);
+    }
+
+    content
+}
+
 pub fn build_payload(
     root_name: &str,
     root_node: Option<&FileNode>,
@@ -78,6 +103,14 @@ pub fn build_payload(
         format!("{}/", root_name)
     };
 
+    let transformed_files: Vec<(String, String)> = files
+        .par_iter()
+        .map(|file| {
+            let content = transform_file_content(file, options);
+            (file.rel_path.clone(), content)
+        })
+        .collect();
+
     if options.xml_format {
         let mut lines = vec!["<repository_context>\n".to_string()];
 
@@ -89,36 +122,16 @@ pub fn build_payload(
 
         let safe_tree = escape_cdata(&tree_lines);
         lines.push("  <directory_structure>\n".to_string());
-        lines.push(format!("<![CDATA[\n{}\n]]>\n", safe_tree));
+        lines.push(format!("<![CDATA[\n{}\n]]]]><![CDATA[>\n", safe_tree));
         lines.push("  </directory_structure>\n\n".to_string());
 
         lines.push("  <source_files>\n".to_string());
 
-        for file in files {
-            let ext = Path::new(&file.rel_path)
-                .extension()
-                .and_then(|s| s.to_str())
-                .unwrap_or("");
-
-            let mut content = file.content.clone();
-
-            if options.skeleton_mode {
-                content = skeletonize_code(&content, ext);
-            }
-            if options.strip_comments {
-                content = strip_comments(&content, ext, options.comment_rules_json.as_deref());
-            }
-            if options.compress_whitespace {
-                content = compress_whitespace(&content);
-            }
-            if options.sanitize_secrets {
-                content = sanitize_secrets(&content);
-            }
-
+        for (rel_path, content) in transformed_files {
             let safe_content = escape_cdata(&content);
 
-            lines.push(format!("    <file path=\"{}\">\n", file.rel_path));
-            lines.push(format!("<![CDATA[\n{}\n]]>\n", safe_content));
+            lines.push(format!("    <file path=\"{}\">\n", rel_path));
+            lines.push(format!("<![CDATA[\n{}\n]]]]><![CDATA[>\n", safe_content));
             lines.push("    </file>\n".to_string());
         }
 
@@ -145,30 +158,10 @@ pub fn build_payload(
                 .to_string(),
         );
 
-        if !files.is_empty() {
+        if !transformed_files.is_empty() {
             lines.push("=== СОДЕРЖИМОЕ КЛЮЧЕВЫХ ФАЙЛОВ КОДА ===\n\n".to_string());
-            for file in files {
-                let ext = Path::new(&file.rel_path)
-                    .extension()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("");
-
-                let mut content = file.content.clone();
-
-                if options.skeleton_mode {
-                    content = skeletonize_code(&content, ext);
-                }
-                if options.strip_comments {
-                    content = strip_comments(&content, ext, options.comment_rules_json.as_deref());
-                }
-                if options.compress_whitespace {
-                    content = compress_whitespace(&content);
-                }
-                if options.sanitize_secrets {
-                    content = sanitize_secrets(&content);
-                }
-
-                lines.push(format!("<file path=\"{}\">\n", file.rel_path));
+            for (rel_path, content) in transformed_files {
+                lines.push(format!("<file path=\"{}\">\n", rel_path));
                 lines.push(content);
                 lines.push("\n</file>\n\n".to_string());
             }
