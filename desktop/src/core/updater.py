@@ -6,7 +6,7 @@ import zipfile
 import tarfile
 from PyQt6.QtCore import QThread, pyqtSignal
 
-CURRENT_VERSION = "v0.1.0"
+CURRENT_VERSION = "v0.1.1"
 GITHUB_REPO = "CogniDevs/CodeContext"
 
 
