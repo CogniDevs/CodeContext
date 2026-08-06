@@ -33,7 +33,7 @@ jobs:
           workspaces: codecontext_core
 
       - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+        uses: taiki-e/install-action@wasm-pack
 
       - name: Build WASM Core
         run: |
