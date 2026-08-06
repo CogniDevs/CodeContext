@@ -73,7 +73,8 @@ class PackerController(QObject):
             self.config_manager.get("sanitize_secrets", False),
             self.config_manager.get("skeleton_mode", False),
             self.config_manager.get("auto_watch", True),
-            self.config_manager.get("max_token_budget", None)
+            self.config_manager.get("max_token_budget", None),
+            self.config_manager.get("git_diff_mode", False)
         )
 
     def on_project_dir_changed(self, path: str):
@@ -113,7 +114,7 @@ class PackerController(QObject):
         root_name = os.path.basename(project_dir) if project_dir else "project"
         selected_files = self.view.tree_panel.get_selected_files_info()
         selected_paths = {f.get('rel_path', '') for f in selected_files}
-        xml, _, _, _, _, _, _ = self.view.control_panel.get_settings()
+        xml, _, _, _, _, _, _, _ = self.view.control_panel.get_settings()
 
         tree_str = RustCoreService.generate_standalone_tree(
             root_name,
@@ -233,7 +234,7 @@ class PackerController(QObject):
         if current_key and current_key in self.prompt_manager.prompts:
             system_prompt = self.prompt_manager.prompts[current_key].get("prompt", "")
 
-        xml, strip, compress, sanitize, skeleton, watch, budget_limit = self.view.control_panel.get_settings()
+        xml, strip, compress, sanitize, skeleton, watch, budget_limit, git_diff = self.view.control_panel.get_settings()
 
         self.config_manager.set("xml_format", xml)
         self.config_manager.set("strip_comments", strip)
@@ -241,6 +242,7 @@ class PackerController(QObject):
         self.config_manager.set("sanitize_secrets", sanitize)
         self.config_manager.set("skeleton_mode", skeleton)
         self.config_manager.set("max_token_budget", budget_limit)
+        self.config_manager.set("git_diff_mode", git_diff)
 
         self.payload_worker = PayloadWorker(
             self.view.paths_panel.get_project_dir(),
@@ -254,7 +256,9 @@ class PackerController(QObject):
             compress,
             sanitize,
             skeleton,
-            self.config_manager.comment_rules
+            self.config_manager.comment_rules,
+            git_diff,
+            self.config_manager.get("git_diff_context_lines", 3)
         )
         setattr(self.payload_worker, "max_token_budget", budget_limit)
 

@@ -109,6 +109,16 @@ class ControlPanel(QWidget):
         toggles_layout_2.addWidget(self.chk_watch_changes)
         ai_layout.addLayout(toggles_layout_2)
 
+        toggles_layout_3 = QHBoxLayout()
+        self.chk_git_diff = QCheckBox("Git Diff (Дельта)")
+        git_diff_icon = get_recolored_icon("resources/icons/ui/git-diff.svg", icon_color)
+        if not git_diff_icon.isNull():
+            self.chk_git_diff.setIcon(git_diff_icon)
+            self.chk_git_diff.setIconSize(QSize(16, 16))
+        self.chk_git_diff.stateChanged.connect(lambda: self.settings_changed.emit())
+        toggles_layout_3.addWidget(self.chk_git_diff)
+        ai_layout.addLayout(toggles_layout_3)
+
         layout.addWidget(ai_group)
 
         log_group = QGroupBox("Лог работы")
@@ -153,11 +163,12 @@ class ControlPanel(QWidget):
             self.chk_sanitize_secrets.isChecked(),
             self.chk_skeleton_mode.isChecked(),
             self.chk_watch_changes.isChecked(),
-            self.get_token_budget_limit()
+            self.get_token_budget_limit(),
+            self.chk_git_diff.isChecked()
         )
 
-    def set_settings(self, xml: bool, strip: bool, compress: bool, sanitize: bool, skeleton: bool, watch: bool, budget_limit: int | None = None):
-        for chk in (self.chk_xml, self.chk_strip_comments, self.chk_compress_whitespace, self.chk_sanitize_secrets, self.chk_skeleton_mode, self.chk_watch_changes):
+    def set_settings(self, xml: bool, strip: bool, compress: bool, sanitize: bool, skeleton: bool, watch: bool, budget_limit: int | None = None, git_diff: bool = False):
+        for chk in (self.chk_xml, self.chk_strip_comments, self.chk_compress_whitespace, self.chk_sanitize_secrets, self.chk_skeleton_mode, self.chk_watch_changes, self.chk_git_diff):
             chk.blockSignals(True)
 
         self.chk_xml.setChecked(xml)
@@ -166,6 +177,7 @@ class ControlPanel(QWidget):
         self.chk_sanitize_secrets.setChecked(sanitize)
         self.chk_skeleton_mode.setChecked(skeleton)
         self.chk_watch_changes.setChecked(watch)
+        self.chk_git_diff.setChecked(git_diff)
 
         self.combo_budget.blockSignals(True)
         if budget_limit == 32000:
@@ -180,7 +192,7 @@ class ControlPanel(QWidget):
             self.combo_budget.setCurrentIndex(0)
         self.combo_budget.blockSignals(False)
 
-        for chk in (self.chk_xml, self.chk_strip_comments, self.chk_compress_whitespace, self.chk_sanitize_secrets, self.chk_skeleton_mode, self.chk_watch_changes):
+        for chk in (self.chk_xml, self.chk_strip_comments, self.chk_compress_whitespace, self.chk_sanitize_secrets, self.chk_skeleton_mode, self.chk_watch_changes, self.chk_git_diff):
             chk.blockSignals(False)
 
     def append_log(self, text: str):

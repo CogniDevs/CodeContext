@@ -55,6 +55,7 @@ pub struct TransformOptions {
     pub max_token_budget: Option<usize>,
     pub git_diff_mode: bool,
     pub git_diff_context_lines: usize,
+    pub git_diff_text: Option<String>,
 }
 
 impl Default for TransformOptions {
@@ -71,6 +72,7 @@ impl Default for TransformOptions {
             max_token_budget: None,
             git_diff_mode: false,
             git_diff_context_lines: 3,
+            git_diff_text: None,
         }
     }
 }

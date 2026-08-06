@@ -14,7 +14,7 @@ pub struct FileInput {
 }
 
 fn escape_cdata(text: &str) -> String {
-    text.replace("]]]]]]><![CDATA[><![CDATA[>", "]]]]]]]]><![CDATA[><![CDATA[><![CDATA[>")
+    text.replace("]]>", "]]]]><![CDATA[>")
 }
 
 pub fn generate_ascii_tree(
@@ -107,7 +107,7 @@ pub fn generate_standalone_tree_payload(
     if xml_format {
         let safe_tree = escape_cdata(&tree_lines);
         format!(
-            "<repository_structure>\n  <directory_structure>\n<![CDATA[\n{}\n]]]]]]><![CDATA[><![CDATA[>\n  </directory_structure>\n</repository_structure>",
+            "<repository_structure>\n  <directory_structure>\n<![CDATA[\n{}\n]]>\n  </directory_structure>\n</repository_structure>",
             safe_tree
         )
     } else {
@@ -125,7 +125,11 @@ pub fn build_payload(
     selected_paths: &HashSet<String>,
     options: &TransformOptions,
 ) -> String {
-    let include_tree = options.always_send_full_tree || files.is_empty();
+    let include_tree = if options.git_diff_mode {
+        options.always_send_full_tree
+    } else {
+        options.always_send_full_tree || files.is_empty()
+    };
 
     let tree_lines = if include_tree {
         if let Some(root) = root_node {
@@ -144,23 +148,31 @@ pub fn build_payload(
         None
     };
 
-    #[cfg(not(target_arch = "wasm32"))]
-    let mut transformed_files: Vec<(String, String)> = files
-        .par_iter()
-        .map(|file| {
-            let content = transform_file_content(file, options);
-            (file.rel_path.clone(), content)
-        })
-        .collect();
+    let mut transformed_files: Vec<(String, String)> = Vec::new();
 
-    #[cfg(target_arch = "wasm32")]
-    let mut transformed_files: Vec<(String, String)> = files
-        .iter()
-        .map(|file| {
-            let content = transform_file_content(file, options);
-            (file.rel_path.clone(), content)
-        })
-        .collect();
+    if !options.git_diff_mode {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            transformed_files = files
+                .par_iter()
+                .map(|file| {
+                    let content = transform_file_content(file, options);
+                    (file.rel_path.clone(), content)
+                })
+                .collect();
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            transformed_files = files
+                .iter()
+                .map(|file| {
+                    let content = transform_file_content(file, options);
+                    (file.rel_path.clone(), content)
+                })
+                .collect();
+        }
+    }
 
     let initial_payload = assemble_formatted_payload(root_name, tree_lines.as_deref(), &transformed_files, options);
 
@@ -191,7 +203,7 @@ pub fn build_payload(
 }
 
 fn assemble_formatted_payload(
-    root_name: &str,
+    _root_name: &str,
     tree_lines: Option<&str>,
     transformed_files: &[(String, String)],
     options: &TransformOptions,
@@ -208,29 +220,40 @@ fn assemble_formatted_payload(
         if let Some(tree) = tree_lines {
             let safe_tree = escape_cdata(tree);
             lines.push("  <directory_structure>\n".to_string());
-            lines.push(format!("<![CDATA[\n{}\n]]]]]]><![CDATA[><![CDATA[>\n", safe_tree));
+            lines.push(format!("<![CDATA[\n{}\n]]>\n", safe_tree));
             lines.push("  </directory_structure>\n\n".to_string());
         }
 
-        lines.push("  <source_files>\n".to_string());
-
-        for (rel_path, content) in transformed_files {
-            let safe_content = escape_cdata(content);
-
-            lines.push(format!("    <file path=\"{}\">\n", rel_path));
-            lines.push(format!("<![CDATA[\n{}\n]]]]]]><![CDATA[><![CDATA[>\n", safe_content));
-            lines.push("    </file>\n".to_string());
+        if options.git_diff_mode {
+            lines.push("  <git_diff_context>\n".to_string());
+            lines.push(format!("    <context_lines>{}</context_lines>\n", options.git_diff_context_lines));
+            if let Some(ref diff) = options.git_diff_text {
+                let safe_diff = escape_cdata(diff);
+                lines.push("    <patch>\n".to_string());
+                lines.push(format!("<![CDATA[\n{}\n]]>\n", safe_diff));
+                lines.push("    </patch>\n".to_string());
+            } else {
+                lines.push("    <patch>[Нет доступных изменений в Git diff]</patch>\n".to_string());
+            }
+            lines.push("  </git_diff_context>\n".to_string());
+        } else {
+            lines.push("  <source_files>\n".to_string());
+            for (rel_path, content) in transformed_files {
+                let safe_content = escape_cdata(content);
+                lines.push(format!("    <file path=\"{}\">\n", rel_path));
+                lines.push(format!("<![CDATA[\n{}\n]]>\n", safe_content));
+                lines.push("    </file>\n".to_string());
+            }
+            lines.push("  </source_files>\n".to_string());
         }
 
-        lines.push("  </source_files>\n".to_string());
         lines.push("</repository_context>".to_string());
-
         lines.concat()
     } else {
         let mut lines = Vec::new();
 
         if !options.system_prompt.trim().is_empty() {
-            lines.push("=== ИНСТРУКЦИЯ ДЛЯ НЕЙРОСЕТИ ===\n".to_string());
+            lines.push("=== ИНСТРУКЦИИ ДЛЯ НЕЙРОСЕТИ ===\n".to_string());
             lines.push(format!("{}\n", options.system_prompt.trim()));
             lines.push(
                 "\n================================================================================\n\n"
@@ -247,15 +270,25 @@ fn assemble_formatted_payload(
             );
         }
 
-        if !transformed_files.is_empty() {
-            lines.push("=== СОДЕРЖИМОЕ КЛЮЧЕВЫХ ФАЙЛОВ КОДА ===\n\n".to_string());
-            for (rel_path, content) in transformed_files {
-                lines.push(format!("<file path=\"{}\">\n", rel_path));
-                lines.push(content.clone());
-                lines.push("\n</file>\n\n".to_string());
+        if options.git_diff_mode {
+            lines.push(format!("=== РЕЖИМ GIT DIFF (КОНТЕКСТ ДЕЛЬТЫ: {} СТРОК) ===\n\n", options.git_diff_context_lines));
+            if let Some(ref diff) = options.git_diff_text {
+                lines.push(diff.clone());
+                lines.push("\n\n".to_string());
+            } else {
+                lines.push("[Нет доступных изменений в Git diff]\n\n".to_string());
             }
         } else {
-            lines.push("=== СОДЕРЖИМОЕ КОДА ===\n\n[Ни один файл кода не был выбран для экспорта.]\n".to_string());
+            if !transformed_files.is_empty() {
+                lines.push("=== СОДЕРЖИМОЕ КЛЮЧЕВЫХ ФАЙЛОВ КОДА ===\n\n".to_string());
+                for (rel_path, content) in transformed_files {
+                    lines.push(format!("<file path=\"{}\">\n", rel_path));
+                    lines.push(content.clone());
+                    lines.push("\n</file>\n\n".to_string());
+                }
+            } else {
+                lines.push("=== СОДЕРЖИМОЕ КОДА ===\n\n[Ни один файл кода не был выбран для экспорта.]\n".to_string());
+            }
         }
 
         lines.concat()

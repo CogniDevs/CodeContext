@@ -14,7 +14,8 @@ class GitService:
                 ["git", "status", "--porcelain"],
                 cwd=root_dir,
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=True,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
             )
@@ -45,7 +46,8 @@ class GitService:
                 ["git", "diff", f"-U{context_lines}"],
                 cwd=root_dir,
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=True,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
             )
