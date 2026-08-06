@@ -62,7 +62,7 @@ class TreePanel(QWidget):
         self.tree_widget.setHeaderLabels(["Файлы и каталоги", "Размер"])
         self.tree_widget.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.tree_widget.itemChanged.connect(self._on_item_changed)
-        
+
         self.tree_widget.itemExpanded.connect(self._on_item_expanded_collapsed)
         self.tree_widget.itemCollapsed.connect(self._on_item_expanded_collapsed)
 
@@ -71,7 +71,7 @@ class TreePanel(QWidget):
     def get_icon_for_node(self, name: str, is_dir: bool, is_expanded: bool = False) -> QIcon:
         lower = name.lower()
         icon_name = "file"
-        
+
         if is_dir:
             if lower in ('src', 'source', 'sources', 'code'):
                 icon_name = "folder-src-open" if is_expanded else "folder-src"
@@ -284,11 +284,11 @@ class TreePanel(QWidget):
                     icon_name = "zig"
                 else:
                     icon_name = "file"
-                    
+
         icon_path = get_resource_path(f"resources/icons/material/{icon_name}.svg")
         if os.path.exists(icon_path):
             return QIcon(icon_path)
-            
+
         standard_pixmap = QStyle.StandardPixmap.SP_DirIcon if is_dir else QStyle.StandardPixmap.SP_FileIcon
         return self.style().standardIcon(standard_pixmap)
 
@@ -298,14 +298,17 @@ class TreePanel(QWidget):
             name = item.text(0)
             is_expanded = item.isExpanded()
             icon = self.get_icon_for_node(name, True, is_expanded)
+            self.tree_widget.blockSignals(True)
             item.setIcon(0, icon)
+            self.tree_widget.blockSignals(False)
 
     def _on_item_changed(self, item, column):
         if column != 0:
             return
         self.tree_widget.blockSignals(True)
         state = item.checkState(0)
-        self._update_children_state(item, state)
+        if state != Qt.CheckState.PartiallyChecked:
+            self._update_children_state(item, state)
         self._update_parent_state(item)
         self.tree_widget.blockSignals(False)
         self.selection_changed.emit()
@@ -315,11 +318,40 @@ class TreePanel(QWidget):
             return
         self.tree_widget.blockSignals(True)
         root_item = self.tree_widget.topLevelItem(0)
-        state = Qt.CheckState.Checked if check else Qt.CheckState.Unchecked
-        root_item.setCheckState(0, state)
-        self._update_children_state(root_item, state)
+        target_state = Qt.CheckState.Checked if check else Qt.CheckState.Unchecked
+        self._set_visible_children_state(root_item, target_state)
+        self._update_parent_state(root_item)
         self.tree_widget.blockSignals(False)
         self.selection_changed.emit()
+
+    def _set_visible_children_state(self, item, state):
+        if not item.isHidden():
+            data = item.data(0, Qt.ItemDataRole.UserRole)
+            if data and not data.get('is_dir', False):
+                item.setCheckState(0, state)
+            elif not data or data.get('is_dir', False):
+                all_checked = True
+                any_checked = False
+                child_count = item.childCount()
+                for i in range(child_count):
+                    child = item.child(i)
+                    self._set_visible_children_state(child, state)
+                    st = child.checkState(0)
+                    if st == Qt.CheckState.Checked:
+                        any_checked = True
+                    elif st == Qt.CheckState.PartiallyChecked:
+                        any_checked = True
+                        all_checked = False
+                    else:
+                        all_checked = False
+
+                if child_count > 0:
+                    if all_checked:
+                        item.setCheckState(0, Qt.CheckState.Checked)
+                    elif any_checked:
+                        item.setCheckState(0, Qt.CheckState.PartiallyChecked)
+                    else:
+                        item.setCheckState(0, Qt.CheckState.Unchecked)
 
     def _update_children_state(self, item, state):
         for i in range(item.childCount()):
@@ -368,6 +400,22 @@ class TreePanel(QWidget):
         for i in range(item.childCount()):
             self._collect_states(item.child(i), states)
 
+    def get_expanded_states(self) -> set:
+        expanded = set()
+        if self.tree_widget.topLevelItemCount() == 0:
+            return expanded
+        root_item = self.tree_widget.topLevelItem(0)
+        self._collect_expanded_states(root_item, expanded)
+        return expanded
+
+    def _collect_expanded_states(self, item, expanded: set):
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        if data and data.get('is_dir', False):
+            if item.isExpanded():
+                expanded.add(data.get('rel_path', ''))
+        for i in range(item.childCount()):
+            self._collect_expanded_states(item.child(i), expanded)
+
     def get_selected_files_info(self, item=None) -> list:
         if item is None:
             if self.tree_widget.topLevelItemCount() == 0:
@@ -398,7 +446,10 @@ class TreePanel(QWidget):
             return data.get('rel_path', '')
         return ""
 
-    def populate_tree(self, root_node_dict: dict, saved_states: dict = None):
+    def populate_tree(self, root_node_dict: dict, saved_states: dict = None, expanded_states: set = None):
+        if expanded_states is None and self.tree_widget.topLevelItemCount() > 0:
+            expanded_states = self.get_expanded_states()
+
         self.tree_widget.blockSignals(True)
         self.tree_widget.clear()
         if not root_node_dict:
@@ -410,7 +461,7 @@ class TreePanel(QWidget):
         root_item.setText(0, root_name)
         root_item.setIcon(0, self.get_icon_for_node(root_name, True, True))
 
-        root_state = Qt.CheckState.Checked
+        root_state = Qt.CheckState.Unchecked
         if saved_states and root_node_dict.get('rel_path', '') in saved_states:
             root_state = saved_states[root_node_dict.get('rel_path', '')]
         root_item.setCheckState(0, root_state)
@@ -422,14 +473,14 @@ class TreePanel(QWidget):
             'size': 0
         })
 
-        self._populate_ui_tree(root_item, root_node_dict.get('children', []), saved_states)
+        self._populate_ui_tree(root_item, root_node_dict.get('children', []), saved_states, expanded_states)
         root_item.setExpanded(True)
         self.tree_widget.blockSignals(False)
 
         if self.search_input.text().strip():
             self.filter_tree(self.search_input.text())
 
-    def _populate_ui_tree(self, parent_item, children_list: list, saved_states: dict = None):
+    def _populate_ui_tree(self, parent_item, children_list: list, saved_states: dict = None, expanded_states: set = None):
         if saved_states is None:
             saved_states = {}
 
@@ -438,15 +489,19 @@ class TreePanel(QWidget):
             name = child.get('name', '')
             item.setText(0, name)
 
-            state = Qt.CheckState.Checked
-            if child.get('rel_path', '') in saved_states:
+            state = Qt.CheckState.Unchecked
+            if saved_states and child.get('rel_path', '') in saved_states:
                 state = saved_states[child.get('rel_path', '')]
             item.setCheckState(0, state)
 
             is_dir = child.get('is_dir', False)
             if is_dir:
-                item.setIcon(0, self.get_icon_for_node(name, True, False))
-                self._populate_ui_tree(item, child.get('children', []), saved_states)
+                child_rel = child.get('rel_path', '')
+                is_exp = bool(expanded_states and child_rel in expanded_states)
+                item.setIcon(0, self.get_icon_for_node(name, True, is_exp))
+                self._populate_ui_tree(item, child.get('children', []), saved_states, expanded_states)
+                if is_exp:
+                    item.setExpanded(True)
             else:
                 size_bytes = child.get('size', 0)
                 kb_size = round(size_bytes / 1024, 1)
