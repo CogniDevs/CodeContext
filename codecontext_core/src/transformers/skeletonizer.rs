@@ -1,5 +1,6 @@
 use regex::Regex;
 
+#[cfg(not(target_arch = "wasm32"))]
 fn skeletonize_treesitter(
     text: &str,
     language: tree_sitter::Language,
@@ -99,21 +100,24 @@ fn skeletonize_treesitter(
 pub fn skeletonize_code(text: &str, extension: &str) -> String {
     let ext = extension.trim_start_matches('.').to_lowercase();
 
-    let ts_lang: Option<(tree_sitter::Language, bool)> = match ext.as_str() {
-        "py" | "ipynb" => Some((tree_sitter_python::language().into(), true)),
-        "rs" => Some((tree_sitter_rust::language().into(), false)),
-        "ts" | "js" => Some((tree_sitter_typescript::language_typescript().into(), false)),
-        "tsx" | "jsx" => Some((tree_sitter_typescript::language_tsx().into(), false)),
-        "c" | "h" => Some((tree_sitter_c::language().into(), false)),
-        "cpp" | "hpp" | "cc" | "cxx" => Some((tree_sitter_cpp::language().into(), false)),
-        "go" => Some((tree_sitter_go::language().into(), false)),
-        "java" => Some((tree_sitter_java::language().into(), false)),
-        _ => None,
-    };
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let ts_lang: Option<(tree_sitter::Language, bool)> = match ext.as_str() {
+            "py" | "ipynb" => Some((tree_sitter_python::language().into(), true)),
+            "rs" => Some((tree_sitter_rust::language().into(), false)),
+            "ts" | "js" => Some((tree_sitter_typescript::language_typescript().into(), false)),
+            "tsx" | "jsx" => Some((tree_sitter_typescript::language_tsx().into(), false)),
+            "c" | "h" => Some((tree_sitter_c::language().into(), false)),
+            "cpp" | "hpp" | "cc" | "cxx" => Some((tree_sitter_cpp::language().into(), false)),
+            "go" => Some((tree_sitter_go::language().into(), false)),
+            "java" => Some((tree_sitter_java::language().into(), false)),
+            _ => None,
+        };
 
-    if let Some((lang, is_python)) = ts_lang {
-        if let Some(cleaned) = skeletonize_treesitter(text, lang, is_python) {
-            return cleaned;
+        if let Some((lang, is_python)) = ts_lang {
+            if let Some(cleaned) = skeletonize_treesitter(text, lang, is_python) {
+                return cleaned;
+            }
         }
     }
 

@@ -2,6 +2,7 @@ use crate::models::{FileNode, TransformOptions};
 use crate::transformers::{
     compress_whitespace, sanitize_secrets, skeletonize_code, strip_comments,
 };
+#[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::path::Path;
@@ -103,8 +104,18 @@ pub fn build_payload(
         format!("{}/", root_name)
     };
 
+    #[cfg(not(target_arch = "wasm32"))]
     let transformed_files: Vec<(String, String)> = files
         .par_iter()
+        .map(|file| {
+            let content = transform_file_content(file, options);
+            (file.rel_path.clone(), content)
+        })
+        .collect();
+
+    #[cfg(target_arch = "wasm32")]
+    let transformed_files: Vec<(String, String)> = files
+        .iter()
         .map(|file| {
             let content = transform_file_content(file, options);
             (file.rel_path.clone(), content)

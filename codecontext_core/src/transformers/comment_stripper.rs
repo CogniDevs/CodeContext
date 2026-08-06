@@ -23,6 +23,7 @@ struct CommentRulesConfig {
     rules: HashMap<String, CommentRule>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn strip_comments_treesitter(text: &str, language: tree_sitter::Language) -> Option<String> {
     let mut parser = tree_sitter::Parser::new();
     if parser.set_language(&language).is_err() {
@@ -149,21 +150,24 @@ pub fn strip_comments(text: &str, extension: &str, rules_json: Option<&str>) -> 
         }
     }
 
-    let ts_lang: Option<tree_sitter::Language> = match ext.as_str() {
-        "py" | "ipynb" => Some(tree_sitter_python::language().into()),
-        "rs" => Some(tree_sitter_rust::language().into()),
-        "ts" | "js" => Some(tree_sitter_typescript::language_typescript().into()),
-        "tsx" | "jsx" => Some(tree_sitter_typescript::language_tsx().into()),
-        "c" | "h" => Some(tree_sitter_c::language().into()),
-        "cpp" | "hpp" | "cc" | "cxx" => Some(tree_sitter_cpp::language().into()),
-        "go" => Some(tree_sitter_go::language().into()),
-        "java" => Some(tree_sitter_java::language().into()),
-        _ => None,
-    };
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let ts_lang: Option<tree_sitter::Language> = match ext.as_str() {
+            "py" | "ipynb" => Some(tree_sitter_python::language().into()),
+            "rs" => Some(tree_sitter_rust::language().into()),
+            "ts" | "js" => Some(tree_sitter_typescript::language_typescript().into()),
+            "tsx" | "jsx" => Some(tree_sitter_typescript::language_tsx().into()),
+            "c" | "h" => Some(tree_sitter_c::language().into()),
+            "cpp" | "hpp" | "cc" | "cxx" => Some(tree_sitter_cpp::language().into()),
+            "go" => Some(tree_sitter_go::language().into()),
+            "java" => Some(tree_sitter_java::language().into()),
+            _ => None,
+        };
 
-    if let Some(lang) = ts_lang {
-        if let Some(cleaned) = strip_comments_treesitter(text, lang) {
-            return cleaned;
+        if let Some(lang) = ts_lang {
+            if let Some(cleaned) = strip_comments_treesitter(text, lang) {
+                return cleaned;
+            }
         }
     }
 
