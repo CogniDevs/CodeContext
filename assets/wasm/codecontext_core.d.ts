@@ -9,6 +9,8 @@ export function compress_whitespace_wasm(text: string): string;
 
 export function count_tokens_wasm(text: string): number;
 
+export function generate_standalone_tree_wasm(root_name: string, root_node_json: string, selected_paths_json: string, xml_format: boolean): string;
+
 export function is_ignored_wasm(rel_path: string, is_dir: boolean, options_json: string): boolean;
 
 export function sanitize_secrets_wasm(text: string): string;
@@ -25,6 +27,7 @@ export interface InitOutput {
     readonly calculate_pagerank_wasm: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly compress_whitespace_wasm: (a: number, b: number) => [number, number];
     readonly count_tokens_wasm: (a: number, b: number) => number;
+    readonly generate_standalone_tree_wasm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
     readonly is_ignored_wasm: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly sanitize_secrets_wasm: (a: number, b: number) => [number, number];
     readonly strip_comments_wasm: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
