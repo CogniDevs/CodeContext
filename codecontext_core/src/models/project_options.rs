@@ -52,6 +52,9 @@ pub struct TransformOptions {
     pub always_send_full_tree: bool,
     pub system_prompt: String,
     pub comment_rules_json: Option<String>,
+    pub max_token_budget: Option<usize>,
+    pub git_diff_mode: bool,
+    pub git_diff_context_lines: usize,
 }
 
 impl Default for TransformOptions {
@@ -62,9 +65,12 @@ impl Default for TransformOptions {
             sanitize_secrets: false,
             skeleton_mode: false,
             xml_format: true,
-            always_send_full_tree: true,
+            always_send_full_tree: false,
             system_prompt: String::new(),
             comment_rules_json: None,
+            max_token_budget: None,
+            git_diff_mode: false,
+            git_diff_context_lines: 3,
         }
     }
 }

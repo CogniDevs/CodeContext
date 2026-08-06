@@ -5,6 +5,7 @@ try:
 except ImportError:
     codecontext_core = None
 
+
 class RustCoreService:
     @staticmethod
     def is_available() -> bool:
@@ -50,6 +51,26 @@ class RustCoreService:
             return set()
         deps = codecontext_core.trace_dependencies_py(root_dir, target_rel_path, content)
         return set(deps)
+
+    @staticmethod
+    def generate_standalone_tree(
+        root_name: str,
+        root_node: dict,
+        selected_paths: set,
+        xml_format: bool
+    ) -> str:
+        if not codecontext_core:
+            return ""
+
+        root_node_json = json.dumps(root_node) if root_node else ""
+        selected_paths_json = json.dumps(list(selected_paths))
+
+        return codecontext_core.generate_standalone_tree_py(
+            root_name,
+            root_node_json,
+            selected_paths_json,
+            xml_format
+        )
 
     @staticmethod
     def build_payload(

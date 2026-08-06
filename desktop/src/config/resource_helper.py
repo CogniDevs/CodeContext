@@ -1,7 +1,7 @@
 import os
 import sys
 from PyQt6.QtGui import QIcon, QPixmap, QPainter
-from PyQt6.QtCore import QByteArray, QSize, Qt
+from PyQt6.QtCore import QByteArray, QSize, Qt, QRectF
 from PyQt6.QtSvg import QSvgRenderer
 
 
@@ -29,15 +29,12 @@ def get_recolored_icon(relative_path: str, color_hex: str) -> QIcon:
         if not renderer.isValid():
             return QIcon()
 
-        size = renderer.defaultSize()
-        if size.isEmpty():
-            size = QSize(24, 24)
-
-        pixmap = QPixmap(size)
+        pixmap = QPixmap(QSize(24, 24))
         pixmap.fill(Qt.GlobalColor.transparent)
 
         painter = QPainter(pixmap)
-        renderer.render(painter)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        renderer.render(painter, QRectF(2, 2, 20, 20))
         painter.end()
 
         return QIcon(pixmap)

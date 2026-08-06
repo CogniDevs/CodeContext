@@ -1,4 +1,5 @@
 use crate::models::{FileNode, TransformOptions};
+use crate::tokenizer::count_tokens;
 use crate::transformers::{
     compress_whitespace, sanitize_secrets, skeletonize_code, strip_comments,
 };
@@ -13,7 +14,7 @@ pub struct FileInput {
 }
 
 fn escape_cdata(text: &str) -> String {
-    text.replace("]]]]><![CDATA[>", "]]]]]]><![CDATA[><![CDATA[>")
+    text.replace("]]]]]]><![CDATA[><![CDATA[>", "]]]]]]]]><![CDATA[><![CDATA[><![CDATA[>")
 }
 
 pub fn generate_ascii_tree(
@@ -84,6 +85,39 @@ pub fn transform_file_content(file: &FileInput, options: &TransformOptions) -> S
     content
 }
 
+pub fn generate_standalone_tree_payload(
+    root_name: &str,
+    root_node: Option<&FileNode>,
+    selected_paths: &HashSet<String>,
+    xml_format: bool,
+) -> String {
+    let tree_lines = if let Some(root) = root_node {
+        let mut lines = vec![format!("{}/", root_name)];
+        let filter = if selected_paths.is_empty() {
+            None
+        } else {
+            Some(selected_paths)
+        };
+        lines.extend(generate_ascii_tree(root, filter, ""));
+        lines.join("\n")
+    } else {
+        format!("{}/", root_name)
+    };
+
+    if xml_format {
+        let safe_tree = escape_cdata(&tree_lines);
+        format!(
+            "<repository_structure>\n  <directory_structure>\n<![CDATA[\n{}\n]]]]]]><![CDATA[><![CDATA[>\n  </directory_structure>\n</repository_structure>",
+            safe_tree
+        )
+    } else {
+        format!(
+            "=== СТРУКТУРА ПРОЕКТА ===\n{}\n================================================================================",
+            tree_lines
+        )
+    }
+}
+
 pub fn build_payload(
     root_name: &str,
     root_node: Option<&FileNode>,
@@ -91,21 +125,27 @@ pub fn build_payload(
     selected_paths: &HashSet<String>,
     options: &TransformOptions,
 ) -> String {
-    let tree_lines = if let Some(root) = root_node {
-        let mut lines = vec![format!("{}/", root_name)];
-        let paths_filter = if options.always_send_full_tree {
-            None
+    let include_tree = options.always_send_full_tree || files.is_empty();
+
+    let tree_lines = if include_tree {
+        if let Some(root) = root_node {
+            let mut lines = vec![format!("{}/", root_name)];
+            let paths_filter = if options.always_send_full_tree {
+                None
+            } else {
+                Some(selected_paths)
+            };
+            lines.extend(generate_ascii_tree(root, paths_filter, ""));
+            Some(lines.join("\n"))
         } else {
-            Some(selected_paths)
-        };
-        lines.extend(generate_ascii_tree(root, paths_filter, ""));
-        lines.join("\n")
+            Some(format!("{}/", root_name))
+        }
     } else {
-        format!("{}/", root_name)
+        None
     };
 
     #[cfg(not(target_arch = "wasm32"))]
-    let transformed_files: Vec<(String, String)> = files
+    let mut transformed_files: Vec<(String, String)> = files
         .par_iter()
         .map(|file| {
             let content = transform_file_content(file, options);
@@ -114,7 +154,7 @@ pub fn build_payload(
         .collect();
 
     #[cfg(target_arch = "wasm32")]
-    let transformed_files: Vec<(String, String)> = files
+    let mut transformed_files: Vec<(String, String)> = files
         .iter()
         .map(|file| {
             let content = transform_file_content(file, options);
@@ -122,6 +162,40 @@ pub fn build_payload(
         })
         .collect();
 
+    let initial_payload = assemble_formatted_payload(root_name, tree_lines.as_deref(), &transformed_files, options);
+
+    if let Some(budget) = options.max_token_budget {
+        if budget > 0 && count_tokens(&initial_payload) > budget {
+            for (rel_path, content) in transformed_files.iter_mut() {
+                let ext = Path::new(rel_path).extension().and_then(|s| s.to_str()).unwrap_or("");
+                *content = skeletonize_code(content, ext);
+            }
+
+            let skeleton_payload = assemble_formatted_payload(root_name, tree_lines.as_deref(), &transformed_files, options);
+            if count_tokens(&skeleton_payload) <= budget {
+                return skeleton_payload;
+            }
+
+            transformed_files.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+            for idx in 0..transformed_files.len() {
+                transformed_files[idx].1 = format!("[Содержимое файла truncated для укладки в лимит {} токенов]", budget);
+                let current_payload = assemble_formatted_payload(root_name, tree_lines.as_deref(), &transformed_files, options);
+                if count_tokens(&current_payload) <= budget {
+                    return current_payload;
+                }
+            }
+        }
+    }
+
+    initial_payload
+}
+
+fn assemble_formatted_payload(
+    root_name: &str,
+    tree_lines: Option<&str>,
+    transformed_files: &[(String, String)],
+    options: &TransformOptions,
+) -> String {
     if options.xml_format {
         let mut lines = vec!["<repository_context>\n".to_string()];
 
@@ -131,18 +205,20 @@ pub fn build_payload(
             lines.push("  </instructions>\n\n".to_string());
         }
 
-        let safe_tree = escape_cdata(&tree_lines);
-        lines.push("  <directory_structure>\n".to_string());
-        lines.push(format!("<![CDATA[\n{}\n]]]]><![CDATA[>\n", safe_tree));
-        lines.push("  </directory_structure>\n\n".to_string());
+        if let Some(tree) = tree_lines {
+            let safe_tree = escape_cdata(tree);
+            lines.push("  <directory_structure>\n".to_string());
+            lines.push(format!("<![CDATA[\n{}\n]]]]]]><![CDATA[><![CDATA[>\n", safe_tree));
+            lines.push("  </directory_structure>\n\n".to_string());
+        }
 
         lines.push("  <source_files>\n".to_string());
 
         for (rel_path, content) in transformed_files {
-            let safe_content = escape_cdata(&content);
+            let safe_content = escape_cdata(content);
 
             lines.push(format!("    <file path=\"{}\">\n", rel_path));
-            lines.push(format!("<![CDATA[\n{}\n]]]]><![CDATA[>\n", safe_content));
+            lines.push(format!("<![CDATA[\n{}\n]]]]]]><![CDATA[><![CDATA[>\n", safe_content));
             lines.push("    </file>\n".to_string());
         }
 
@@ -162,22 +238,24 @@ pub fn build_payload(
             );
         }
 
-        lines.push("=== ПОЛНАЯ СТРУКТУРА ПРОЕКТА (БЕЗ СИСТЕМНОГО МУСОРА) ===\n".to_string());
-        lines.push(format!("{}\n", tree_lines));
-        lines.push(
-            "\n================================================================================\n\n"
-                .to_string(),
-        );
+        if let Some(tree) = tree_lines {
+            lines.push("=== ПОЛНАЯ СТРУКТУРА ПРОЕКТА ===\n".to_string());
+            lines.push(format!("{}\n", tree));
+            lines.push(
+                "\n================================================================================\n\n"
+                    .to_string(),
+            );
+        }
 
         if !transformed_files.is_empty() {
             lines.push("=== СОДЕРЖИМОЕ КЛЮЧЕВЫХ ФАЙЛОВ КОДА ===\n\n".to_string());
             for (rel_path, content) in transformed_files {
                 lines.push(format!("<file path=\"{}\">\n", rel_path));
-                lines.push(content);
+                lines.push(content.clone());
                 lines.push("\n</file>\n\n".to_string());
             }
         } else {
-            lines.push("=== СОДЕРЖИМОЕ КОДА ===\n\n[Ни один файл кода не был выбран для экспорта. Скопирована только структура проекта.]\n".to_string());
+            lines.push("=== СОДЕРЖИМОЕ КОДА ===\n\n[Ни один файл кода не был выбран для экспорта.]\n".to_string());
         }
 
         lines.concat()

@@ -64,6 +64,31 @@ fn trace_dependencies_py(
 
 #[cfg(feature = "python")]
 #[pyfunction]
+fn generate_standalone_tree_py(
+    root_name: &str,
+    root_node_json: &str,
+    selected_paths_json: &str,
+    xml_format: bool,
+) -> PyResult<String> {
+    let root_node: Option<FileNode> = if root_node_json.trim().is_empty() {
+        None
+    } else {
+        serde_json::from_str(root_node_json).ok()
+    };
+
+    let selected_paths: HashSet<String> = serde_json::from_str(selected_paths_json)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+
+    Ok(services::payload_service::generate_standalone_tree_payload(
+        root_name,
+        root_node.as_ref(),
+        &selected_paths,
+        xml_format,
+    ))
+}
+
+#[cfg(feature = "python")]
+#[pyfunction]
 fn build_payload_py(
     root_name: &str,
     root_node_json: &str,
@@ -135,6 +160,7 @@ fn codecontext_core(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(count_tokens_py, m)?)?;
     m.add_function(wrap_pyfunction!(scan_directory_py, m)?)?;
     m.add_function(wrap_pyfunction!(trace_dependencies_py, m)?)?;
+    m.add_function(wrap_pyfunction!(generate_standalone_tree_py, m)?)?;
     m.add_function(wrap_pyfunction!(build_payload_py, m)?)?;
     m.add_function(wrap_pyfunction!(calculate_pagerank_py, m)?)?;
     Ok(())
@@ -194,6 +220,30 @@ pub fn trace_dependencies_wasm(
     )
     .into_iter()
     .collect()
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn generate_standalone_tree_wasm(
+    root_name: &str,
+    root_node_json: &str,
+    selected_paths_json: &str,
+    xml_format: bool,
+) -> String {
+    let root_node: Option<FileNode> = if root_node_json.trim().is_empty() {
+        None
+    } else {
+        serde_json::from_str(root_node_json).ok()
+    };
+
+    let selected_paths: HashSet<String> = serde_json::from_str(selected_paths_json).unwrap_or_default();
+
+    services::payload_service::generate_standalone_tree_payload(
+        root_name,
+        root_node.as_ref(),
+        &selected_paths,
+        xml_format,
+    )
 }
 
 #[cfg(feature = "wasm")]

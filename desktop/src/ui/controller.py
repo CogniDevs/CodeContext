@@ -1,6 +1,6 @@
 import os
 from PyQt6.QtCore import QObject, QTimer
-from PyQt6.QtWidgets import QMessageBox, QApplication, QPushButton
+from PyQt6.QtWidgets import QMessageBox, QApplication
 
 from core.rust_core_service import RustCoreService
 from core.git_service import GitService
@@ -48,12 +48,9 @@ class PackerController(QObject):
 
         self.view.tree_panel.selection_changed.connect(lambda: self.stats_timer.start(200))
         self.view.tree_panel.refresh_requested.connect(self.reload_tree)
-
-        for btn in self.view.tree_panel.findChildren(QPushButton):
-            if btn.text() == "Только Git":
-                btn.clicked.connect(self.on_git_select_requested)
-            elif btn.text() == "Импорты":
-                btn.clicked.connect(self.on_deps_select_requested)
+        self.view.tree_panel.copy_tree_requested.connect(self.copy_standalone_tree)
+        self.view.tree_panel.git_select_requested.connect(self.on_git_select_requested)
+        self.view.tree_panel.deps_select_requested.connect(self.on_deps_select_requested)
 
         self.view.control_panel.settings_changed.connect(self.reload_tree)
         self.view.control_panel.auto_watch_changed.connect(self.on_auto_watch_changed)
@@ -75,7 +72,8 @@ class PackerController(QObject):
             self.config_manager.get("compress_whitespace", False),
             self.config_manager.get("sanitize_secrets", False),
             self.config_manager.get("skeleton_mode", False),
-            self.config_manager.get("auto_watch", True)
+            self.config_manager.get("auto_watch", True),
+            self.config_manager.get("max_token_budget", None)
         )
 
     def on_project_dir_changed(self, path: str):
@@ -109,6 +107,24 @@ class PackerController(QObject):
         else:
             self.watcher.stop_watching()
             self.view.control_panel.append_log("Автоматическое слежение за папкой отключено.")
+
+    def copy_standalone_tree(self):
+        project_dir = self.view.paths_panel.get_project_dir()
+        root_name = os.path.basename(project_dir) if project_dir else "project"
+        selected_files = self.view.tree_panel.get_selected_files_info()
+        selected_paths = {f.get('rel_path', '') for f in selected_files}
+        xml, _, _, _, _, _, _ = self.view.control_panel.get_settings()
+
+        tree_str = RustCoreService.generate_standalone_tree(
+            root_name,
+            self.root_node_dict,
+            selected_paths,
+            xml
+        )
+        if tree_str:
+            QApplication.clipboard().setText(tree_str)
+            self.view.status_bar.showMessage("ASCII-структура проекта скопирована в буфер обмена!")
+            self.view.control_panel.append_log("Скопирована только структура проекта.")
 
     def on_git_select_requested(self):
         project_dir = self.view.paths_panel.get_project_dir()
@@ -175,11 +191,14 @@ class PackerController(QObject):
 
         saved_states = self.view.tree_panel.get_check_states()
         self.root_node_dict = RustCoreService.scan_directory(project_dir, options)
-        self.view.tree_panel.populate_tree(self.root_node_dict, saved_states)
+        self.tree_panel_populate(saved_states)
         self.update_stats()
         self.view.bottom_panel.set_actions_enabled(True)
         self.view.status_bar.showMessage("Проект просканирован успешно на Rust.")
         self.view.control_panel.append_log(f"Rust Scan: {project_dir}")
+
+    def tree_panel_populate(self, saved_states):
+        self.view.tree_panel.populate_tree(self.root_node_dict, saved_states)
 
     def update_stats(self):
         selected_files = self.view.tree_panel.get_selected_files_info()
@@ -214,13 +233,14 @@ class PackerController(QObject):
         if current_key and current_key in self.prompt_manager.prompts:
             system_prompt = self.prompt_manager.prompts[current_key].get("prompt", "")
 
-        xml, strip, compress, sanitize, skeleton, watch = self.view.control_panel.get_settings()
+        xml, strip, compress, sanitize, skeleton, watch, budget_limit = self.view.control_panel.get_settings()
 
         self.config_manager.set("xml_format", xml)
         self.config_manager.set("strip_comments", strip)
         self.config_manager.set("compress_whitespace", compress)
         self.config_manager.set("sanitize_secrets", sanitize)
         self.config_manager.set("skeleton_mode", skeleton)
+        self.config_manager.set("max_token_budget", budget_limit)
 
         self.payload_worker = PayloadWorker(
             self.view.paths_panel.get_project_dir(),
@@ -229,13 +249,14 @@ class PackerController(QObject):
             selected_paths,
             system_prompt,
             xml,
-            self.config_manager.get("always_send_full_tree", True),
+            self.config_manager.get("always_send_full_tree", False),
             strip,
             compress,
             sanitize,
             skeleton,
             self.config_manager.comment_rules
         )
+        setattr(self.payload_worker, "max_token_budget", budget_limit)
 
         self.payload_worker.finished.connect(
             lambda payload, tokens: self._on_payload_ready(payload, tokens, callback)

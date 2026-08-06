@@ -1,58 +1,161 @@
 import os
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTreeWidget, QTreeWidgetItem, QHeaderView, QStyle
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QIcon
-from config.resource_helper import get_resource_path
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QPushButton, QTreeWidget, QTreeWidgetItem, QHeaderView,
+    QStyle, QToolButton, QMenu
+)
+from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from PyQt6.QtGui import QIcon, QAction, QPalette
+from config.resource_helper import get_resource_path, get_recolored_icon
 
 
 class TreePanel(QWidget):
     selection_changed = pyqtSignal()
     refresh_requested = pyqtSignal()
+    copy_tree_requested = pyqtSignal()
+    git_select_requested = pyqtSignal()
+    deps_select_requested = pyqtSignal()
     log_message = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.init_ui()
 
+    def _get_icon_color(self) -> str:
+        color = self.palette().color(QPalette.ColorRole.ButtonText)
+        if not color.isValid():
+            color = self.palette().color(QPalette.ColorRole.WindowText)
+        return color.name()
+
+    def update_icons(self):
+        menu_icon_color = self._get_icon_color()
+        btn_icon_color = "#ffffff"
+
+        smart_icon = get_recolored_icon("resources/icons/ui/git.svg", btn_icon_color)
+        if smart_icon.isNull():
+            smart_icon = get_recolored_icon("resources/icons/ui/file-search.svg", btn_icon_color)
+        if not smart_icon.isNull():
+            self.btn_smart_select.setIcon(smart_icon)
+
+        git_icon = get_recolored_icon("resources/icons/ui/git.svg", menu_icon_color)
+        if not git_icon.isNull():
+            self.act_git.setIcon(git_icon)
+
+        imports_icon = get_recolored_icon("resources/icons/ui/imports.svg", menu_icon_color)
+        if not imports_icon.isNull():
+            self.act_deps.setIcon(imports_icon)
+
+        check_icon = get_recolored_icon("resources/icons/ui/select-all.svg", btn_icon_color)
+        if check_icon.isNull():
+            check_icon = get_recolored_icon("resources/icons/ui/add.svg", btn_icon_color)
+        if not check_icon.isNull():
+            self.btn_check_all.setIcon(check_icon)
+
+        uncheck_icon = get_recolored_icon("resources/icons/ui/deselect-all.svg", btn_icon_color)
+        if uncheck_icon.isNull():
+            uncheck_icon = get_recolored_icon("resources/icons/ui/delete.svg", btn_icon_color)
+        if not uncheck_icon.isNull():
+            self.btn_uncheck_all.setIcon(uncheck_icon)
+
+        expand_icon = get_recolored_icon("resources/icons/ui/expand-all.svg", btn_icon_color)
+        if expand_icon.isNull():
+            expand_icon = get_recolored_icon("resources/icons/ui/folder-open.svg", btn_icon_color)
+        if not expand_icon.isNull():
+            self.btn_expand.setIcon(expand_icon)
+
+        collapse_icon = get_recolored_icon("resources/icons/ui/collapse-all.svg", btn_icon_color)
+        if collapse_icon.isNull():
+            collapse_icon = get_recolored_icon("resources/icons/ui/folder.svg", btn_icon_color)
+        if not collapse_icon.isNull():
+            self.btn_collapse.setIcon(collapse_icon)
+
+        tree_icon = get_recolored_icon("resources/icons/ui/tree-structure.svg", btn_icon_color)
+        if tree_icon.isNull():
+            tree_icon = get_recolored_icon("resources/icons/ui/copy.svg", btn_icon_color)
+        if not tree_icon.isNull():
+            self.btn_copy_tree.setIcon(tree_icon)
+
+        refresh_icon = get_recolored_icon("resources/icons/ui/refresh.svg", btn_icon_color)
+        if not refresh_icon.isNull():
+            self.btn_refresh.setIcon(refresh_icon)
+
     def init_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
         toolbar = QHBoxLayout()
-        toolbar.addWidget(QLabel("Структура для экспорта:"))
+        toolbar.setSpacing(4)
+        toolbar.addWidget(QLabel("Структура:"))
 
-        btn_check_all = QPushButton("Выделить всё")
-        btn_check_all.clicked.connect(lambda: self.check_all_items(True))
-        toolbar.addWidget(btn_check_all)
+        self.btn_smart_select = QToolButton()
+        self.btn_smart_select.setToolTip("Умный выбор (Git измененные / Локальные импорты)")
+        self.btn_smart_select.setFixedSize(32, 32)
+        self.btn_smart_select.setIconSize(QSize(18, 18))
+        self.btn_smart_select.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
 
-        btn_uncheck_all = QPushButton("Снять выделение")
-        btn_uncheck_all.clicked.connect(lambda: self.check_all_items(False))
-        toolbar.addWidget(btn_uncheck_all)
+        smart_menu = QMenu(self.btn_smart_select)
 
-        btn_git_select = QPushButton("Только Git")
-        toolbar.addWidget(btn_git_select)
+        self.act_git = QAction("Только измененные (Git)", self)
+        self.act_git.triggered.connect(self.git_select_requested.emit)
+        smart_menu.addAction(self.act_git)
 
-        btn_deps_select = QPushButton("Импорты")
-        btn_deps_select.setToolTip("Выделить все импортируемые файлы для выбранного")
-        toolbar.addWidget(btn_deps_select)
+        self.act_deps = QAction("Локальные импорты файла", self)
+        self.act_deps.setToolTip("Выделить все импортируемые файлы для текущего выбранного файла")
+        self.act_deps.triggered.connect(self.deps_select_requested.emit)
+        smart_menu.addAction(self.act_deps)
 
-        btn_expand = QPushButton("Развернуть")
-        btn_expand.clicked.connect(lambda: self.tree_widget.expandAll())
-        toolbar.addWidget(btn_expand)
+        self.btn_smart_select.setMenu(smart_menu)
+        toolbar.addWidget(self.btn_smart_select)
 
-        btn_collapse = QPushButton("Свернуть")
-        btn_collapse.clicked.connect(lambda: self.tree_widget.collapseAll())
-        toolbar.addWidget(btn_collapse)
+        self.btn_check_all = QPushButton()
+        self.btn_check_all.setIconSize(QSize(18, 18))
+        self.btn_check_all.setToolTip("Выделить все файлы в проекте")
+        self.btn_check_all.setFixedSize(32, 32)
+        self.btn_check_all.clicked.connect(lambda: self.check_all_items(True))
+        toolbar.addWidget(self.btn_check_all)
 
-        btn_refresh = QPushButton("Обновить")
-        btn_refresh.clicked.connect(self.refresh_requested.emit)
-        toolbar.addWidget(btn_refresh)
+        self.btn_uncheck_all = QPushButton()
+        self.btn_uncheck_all.setIconSize(QSize(18, 18))
+        self.btn_uncheck_all.setToolTip("Снять выделение со всех файлов")
+        self.btn_uncheck_all.setFixedSize(32, 32)
+        self.btn_uncheck_all.clicked.connect(lambda: self.check_all_items(False))
+        toolbar.addWidget(self.btn_uncheck_all)
+
+        self.btn_expand = QPushButton()
+        self.btn_expand.setIconSize(QSize(18, 18))
+        self.btn_expand.setToolTip("Развернуть все папки")
+        self.btn_expand.setFixedSize(32, 32)
+        self.btn_expand.clicked.connect(lambda: self.tree_widget.expandAll())
+        toolbar.addWidget(self.btn_expand)
+
+        self.btn_collapse = QPushButton()
+        self.btn_collapse.setIconSize(QSize(18, 18))
+        self.btn_collapse.setToolTip("Свернуть все папки")
+        self.btn_collapse.setFixedSize(32, 32)
+        self.btn_collapse.clicked.connect(lambda: self.tree_widget.collapseAll())
+        toolbar.addWidget(self.btn_collapse)
+
+        self.btn_copy_tree = QPushButton()
+        self.btn_copy_tree.setIconSize(QSize(18, 18))
+        self.btn_copy_tree.setToolTip("Скопировать только ASCII-структуру проекта в буфер")
+        self.btn_copy_tree.setFixedSize(32, 32)
+        self.btn_copy_tree.clicked.connect(self.copy_tree_requested.emit)
+        toolbar.addWidget(self.btn_copy_tree)
+
+        self.btn_refresh = QPushButton()
+        self.btn_refresh.setIconSize(QSize(18, 18))
+        self.btn_refresh.setToolTip("Пересканировать диск")
+        self.btn_refresh.setFixedSize(32, 32)
+        self.btn_refresh.clicked.connect(self.refresh_requested.emit)
+        toolbar.addWidget(self.btn_refresh)
+
+        self.update_icons()
 
         layout.addLayout(toolbar)
 
         search_layout = QHBoxLayout()
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Быстрый поиск файлов по имени или расширению...")
+        self.search_input.setPlaceholderText("Поиск файлов по имени или расширению...")
         self.search_input.textChanged.connect(self.filter_tree)
         search_layout.addWidget(self.search_input)
         layout.addLayout(search_layout)
