@@ -50,16 +50,43 @@ fn strip_comments_treesitter(text: &str, language: tree_sitter::Language) -> Opt
         return Some(text.to_string());
     }
 
-    comment_ranges.sort_by(|a, b| b.0.cmp(&a.0));
-    let mut bytes = text.as_bytes().to_vec();
+    comment_ranges.sort_by(|a, b| a.0.cmp(&b.0));
 
+    let mut merged_ranges: Vec<(usize, usize)> = Vec::new();
     for (start, end) in comment_ranges {
-        if start < bytes.len() && end <= bytes.len() && start < end {
-            bytes.drain(start..end);
+        if let Some(last) = merged_ranges.last_mut() {
+            if start < last.1 {
+                if end > last.1 {
+                    last.1 = end;
+                }
+                continue;
+            }
+        }
+        merged_ranges.push((start, end));
+    }
+
+    let text_bytes = text.as_bytes();
+    let text_len = text_bytes.len();
+    let mut result = Vec::with_capacity(text_len);
+    let mut last_idx = 0;
+
+    for (start, end) in merged_ranges {
+        let start_clamped = start.min(text_len);
+        let end_clamped = end.min(text_len);
+
+        if start_clamped > last_idx {
+            result.extend_from_slice(&text_bytes[last_idx..start_clamped]);
+        }
+        if end_clamped > last_idx {
+            last_idx = end_clamped;
         }
     }
 
-    String::from_utf8(bytes).ok()
+    if last_idx < text_len {
+        result.extend_from_slice(&text_bytes[last_idx..]);
+    }
+
+    String::from_utf8(result).ok()
 }
 
 pub fn strip_comments(text: &str, extension: &str, rules_json: Option<&str>) -> String {
@@ -123,14 +150,14 @@ pub fn strip_comments(text: &str, extension: &str, rules_json: Option<&str>) -> 
     }
 
     let ts_lang: Option<tree_sitter::Language> = match ext.as_str() {
-        "py" | "ipynb" => Some(tree_sitter_python::LANGUAGE.into()),
-        "rs" => Some(tree_sitter_rust::LANGUAGE.into()),
-        "ts" | "js" => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
-        "tsx" | "jsx" => Some(tree_sitter_typescript::LANGUAGE_TSX.into()),
-        "c" | "h" => Some(tree_sitter_c::LANGUAGE.into()),
-        "cpp" | "hpp" | "cc" | "cxx" => Some(tree_sitter_cpp::LANGUAGE.into()),
-        "go" => Some(tree_sitter_go::LANGUAGE.into()),
-        "java" => Some(tree_sitter_java::LANGUAGE.into()),
+        "py" | "ipynb" => Some(tree_sitter_python::language().into()),
+        "rs" => Some(tree_sitter_rust::language().into()),
+        "ts" | "js" => Some(tree_sitter_typescript::language_typescript().into()),
+        "tsx" | "jsx" => Some(tree_sitter_typescript::language_tsx().into()),
+        "c" | "h" => Some(tree_sitter_c::language().into()),
+        "cpp" | "hpp" | "cc" | "cxx" => Some(tree_sitter_cpp::language().into()),
+        "go" => Some(tree_sitter_go::language().into()),
+        "java" => Some(tree_sitter_java::language().into()),
         _ => None,
     };
 

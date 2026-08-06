@@ -49,35 +49,65 @@ fn skeletonize_treesitter(
         return Some(text.to_string());
     }
 
-    replacements.sort_by(|a, b| b.0.cmp(&a.0));
-    let mut bytes = text.as_bytes().to_vec();
+    replacements.sort_by(|a, b| a.0.cmp(&b.0));
 
+    let mut merged_replacements: Vec<(usize, usize, bool)> = Vec::new();
     for (start, end, py) in replacements {
-        if start < bytes.len() && end <= bytes.len() && start < end {
-            let replacement_text = if py {
-                "\n    ...\n".as_bytes()
-            } else {
-                " { ... }".as_bytes()
-            };
-            bytes.splice(start..end, replacement_text.iter().cloned());
+        if let Some(last) = merged_replacements.last_mut() {
+            if start < last.1 {
+                if end > last.1 {
+                    last.1 = end;
+                }
+                continue;
+            }
+        }
+        merged_replacements.push((start, end, py));
+    }
+
+    let text_bytes = text.as_bytes();
+    let text_len = text_bytes.len();
+    let mut result = Vec::with_capacity(text_len);
+    let mut last_idx = 0;
+
+    for (start, end, py) in merged_replacements {
+        let start_clamped = start.min(text_len);
+        let end_clamped = end.min(text_len);
+
+        if start_clamped > last_idx {
+            result.extend_from_slice(&text_bytes[last_idx..start_clamped]);
+        }
+
+        let replacement_bytes = if py {
+            "\n    ...\n".as_bytes()
+        } else {
+            " { ... }".as_bytes()
+        };
+        result.extend_from_slice(replacement_bytes);
+
+        if end_clamped > last_idx {
+            last_idx = end_clamped;
         }
     }
 
-    String::from_utf8(bytes).ok()
+    if last_idx < text_len {
+        result.extend_from_slice(&text_bytes[last_idx..]);
+    }
+
+    String::from_utf8(result).ok()
 }
 
 pub fn skeletonize_code(text: &str, extension: &str) -> String {
     let ext = extension.trim_start_matches('.').to_lowercase();
 
     let ts_lang: Option<(tree_sitter::Language, bool)> = match ext.as_str() {
-        "py" | "ipynb" => Some((tree_sitter_python::LANGUAGE.into(), true)),
-        "rs" => Some((tree_sitter_rust::LANGUAGE.into(), false)),
-        "ts" | "js" => Some((tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(), false)),
-        "tsx" | "jsx" => Some((tree_sitter_typescript::LANGUAGE_TSX.into(), false)),
-        "c" | "h" => Some((tree_sitter_c::LANGUAGE.into(), false)),
-        "cpp" | "hpp" | "cc" | "cxx" => Some((tree_sitter_cpp::LANGUAGE.into(), false)),
-        "go" => Some((tree_sitter_go::LANGUAGE.into(), false)),
-        "java" => Some((tree_sitter_java::LANGUAGE.into(), false)),
+        "py" | "ipynb" => Some((tree_sitter_python::language().into(), true)),
+        "rs" => Some((tree_sitter_rust::language().into(), false)),
+        "ts" | "js" => Some((tree_sitter_typescript::language_typescript().into(), false)),
+        "tsx" | "jsx" => Some((tree_sitter_typescript::language_tsx().into(), false)),
+        "c" | "h" => Some((tree_sitter_c::language().into(), false)),
+        "cpp" | "hpp" | "cc" | "cxx" => Some((tree_sitter_cpp::language().into(), false)),
+        "go" => Some((tree_sitter_go::language().into(), false)),
+        "java" => Some((tree_sitter_java::language().into(), false)),
         _ => None,
     };
 
