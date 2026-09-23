@@ -8,7 +8,7 @@
 	"ignore_binary": true,
 	"ignore_lockfiles": true,
 	"auto_check_updates": true,
-	"auto_watch": true,
+	"auto_watch": false,
 	"always_send_full_tree": false,
 	"theme": "dark",
 	"selected_preset": "Все текстовые файлы (без ограничений)",

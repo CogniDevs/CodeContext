@@ -79,9 +79,9 @@ fn skeletonize_treesitter(
         }
 
         let replacement_bytes = if py {
-            "\n    ...\n".as_bytes()
+            b"\n    ...\n"
         } else {
-            " { ... }".as_bytes()
+            b" { ... }"
         };
         result.extend_from_slice(replacement_bytes);
 
@@ -203,25 +203,59 @@ fn skeletonize_brace(text: &str) -> String {
         return text.to_string();
     };
 
-    let mut result = text.to_string();
-    let mut replacements = Vec::new();
+    let text_bytes = text.as_bytes();
+    let text_len = text_bytes.len();
+    let mut raw_ranges = Vec::new();
 
     for mat in re.find_iter(text) {
-        let open_brace_idx = mat.end() - 1;
-        if let Some(close_brace_idx) = find_matching_brace_bytes(text.as_bytes(), open_brace_idx) {
-            replacements.push((open_brace_idx, close_brace_idx));
+        let open_brace_idx = mat.end().saturating_sub(1);
+        if let Some(close_brace_idx) = find_matching_brace_bytes(text_bytes, open_brace_idx) {
+            if open_brace_idx + 1 < close_brace_idx {
+                raw_ranges.push((open_brace_idx + 1, close_brace_idx));
+            }
         }
     }
 
-    replacements.sort_by(|a, b| b.0.cmp(&a.0));
+    if raw_ranges.is_empty() {
+        return text.to_string();
+    }
 
-    for (start, end) in replacements {
-        if start + 1 < end {
-            result.replace_range((start + 1)..end, " ... ");
+    raw_ranges.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut merged: Vec<(usize, usize)> = Vec::new();
+    for (start, end) in raw_ranges {
+        if let Some(last) = merged.last_mut() {
+            if start < last.1 {
+                if end > last.1 {
+                    last.1 = end;
+                }
+                continue;
+            }
+        }
+        merged.push((start, end));
+    }
+
+    let mut result_bytes = Vec::with_capacity(text_len);
+    let mut last_idx = 0;
+
+    for (start, end) in merged {
+        let start_clamped = start.min(text_len);
+        let end_clamped = end.min(text_len);
+
+        if start_clamped > last_idx {
+            result_bytes.extend_from_slice(&text_bytes[last_idx..start_clamped]);
+        }
+        result_bytes.extend_from_slice(b" ... ");
+        if end_clamped > last_idx {
+            last_idx = end_clamped;
         }
     }
 
-    result
+    if last_idx < text_len {
+        result_bytes.extend_from_slice(&text_bytes[last_idx..]);
+    }
+
+    String::from_utf8(result_bytes).unwrap_or_else(|_| text.to_string())
 }
 
 fn skeletonize_python(text: &str) -> String {
@@ -250,7 +284,7 @@ fn skeletonize_python(text: &str) -> String {
             continue;
         }
 
-        let current_indent = line.len() - line.trim_start().len();
+        let current_indent = line.len().saturating_sub(line.trim_start().len());
 
         if in_docstring {
             result.push(line.to_string());

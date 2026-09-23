@@ -52,7 +52,11 @@ export class SettingsModalComponent implements OnInit {
   readonly activeExtensions = signal<Set<string>>(new Set<string>());
   readonly allExcludes = signal<string[]>([]);
   readonly activeExcludes = signal<Set<string>>(new Set<string>());
-  readonly gitignoreDisabledRules = signal<string[]>([]);
+  readonly disabledGitignoreRules = signal<Set<string>>(new Set<string>());
+
+  readonly projectGitignoreRules = computed<string[]>(() => {
+    return this.state.projectGitignoreRules();
+  });
 
   readonly presetKeys = computed<string[]>(() => Object.keys(this.presets()));
 
@@ -76,8 +80,15 @@ export class SettingsModalComponent implements OnInit {
 
     this.activeExtensions.set(new Set<string>(scan.whitelist_extensions));
     this.activeExcludes.set(new Set<string>(scan.manual_excludes));
-    this.gitignoreDisabledRules.set([...scan.gitignore_disabled_rules]);
+    this.disabledGitignoreRules.set(
+      new Set<string>(scan.gitignore_disabled_rules || []),
+    );
     this.activeTab.set('general');
+
+    if (this.state.rootPath()) {
+      this.state.fetchProjectGitignoreRules();
+    }
+
     this.isOpen.set(true);
   }
 
@@ -158,16 +169,28 @@ export class SettingsModalComponent implements OnInit {
     this.form.controls.newExclude.setValue('');
   }
 
-  protected removeGitignoreDisabledRule(rule: string): void {
-    this.gitignoreDisabledRules.update((list) =>
-      list.filter((r) => r !== rule),
-    );
+  protected isGitignoreRuleActive(rule: string): boolean {
+    return !this.disabledGitignoreRules().has(rule);
+  }
+
+  protected toggleGitignoreRule(rule: string): void {
+    this.disabledGitignoreRules.update((set) => {
+      const next = new Set<string>(set);
+      if (next.has(rule)) {
+        next.delete(rule);
+      } else {
+        next.add(rule);
+      }
+      return next;
+    });
   }
 
   protected saveAndClose(): void {
     const raw = this.form.getRawValue();
 
     this.themeService.setTheme(raw.theme);
+
+    const disabledList = Array.from(this.disabledGitignoreRules());
 
     this.state.scanOptions.update((opts) => ({
       ...opts,
@@ -176,7 +199,7 @@ export class SettingsModalComponent implements OnInit {
       ignore_lockfiles: raw.ignoreLockfiles,
       whitelist_extensions: Array.from(this.activeExtensions()),
       manual_excludes: Array.from(this.activeExcludes()),
-      gitignore_disabled_rules: this.gitignoreDisabledRules(),
+      gitignore_disabled_rules: disabledList,
     }));
 
     this.state.transformOptions.update((opts) => ({
@@ -193,12 +216,24 @@ export class SettingsModalComponent implements OnInit {
         theme: raw.theme,
         whitelist_extensions: Array.from(this.activeExtensions()),
         manual_excludes: Array.from(this.activeExcludes()),
-        gitignore_disabled_rules: this.gitignoreDisabledRules(),
+        gitignore_disabled_rules: disabledList,
       };
       this.api.saveSettings(updatedSettings).subscribe();
+
+      if (this.state.rootPath()) {
+        this.api
+          .scanDirectory(this.state.rootPath(), this.state.scanOptions())
+          .subscribe({
+            next: (tree) => {
+              this.state.setRootNode(tree, this.state.rootPath());
+              this.state.generatePayload();
+            },
+          });
+      }
+    } else {
+      this.state.generatePayload();
     }
 
-    this.state.generatePayload();
     this.close();
   }
 

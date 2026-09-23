@@ -83,6 +83,8 @@ const DEFAULT_BINARY_EXTENSIONS: string[] = [
   '.psd',
   '.class',
   '.pyc',
+  '.pyo',
+  '.pyd',
   '.o',
   '.obj',
   '.so',
@@ -98,6 +100,14 @@ const DEFAULT_BINARY_EXTENSIONS: string[] = [
   '.a',
   '.lib',
 ];
+
+const MAX_WEB_FILE_SIZE_BYTES = 1024 * 1024 * 1.5;
+const MAX_SINGLE_LINE_LENGTH = 4000;
+
+export interface DirectoryScanResult {
+  rootNode: FileNode | null;
+  gitignoreRules: string[];
+}
 
 @Injectable({
   providedIn: 'root',
@@ -139,58 +149,121 @@ export class FileSystemService {
     this.fileContentCache.clear();
   }
 
-  async openDirectoryPicker(options: ScanOptions): Promise<FileNode | null> {
-    if (!('showDirectoryPicker' in window)) {
-      throw new Error(
-        'File System Access API не поддерживается данным браузером',
-      );
-    }
+  async openDirectoryPicker(
+    options: ScanOptions,
+  ): Promise<DirectoryScanResult> {
+    if ('showDirectoryPicker' in window) {
+      try {
+        const pickerFn = (
+          window as unknown as {
+            showDirectoryPicker: () => Promise<FileSystemDirectoryHandle>;
+          }
+        ).showDirectoryPicker;
+        const handle = await pickerFn();
 
-    try {
-      this.isScanning.set(true);
-      await this.wasmService.init();
+        this.isScanning.set(true);
+        await this.wasmService.init();
+        this.currentProjectName.set(handle.name);
 
-      const pickerFn = (
-        window as unknown as {
-          showDirectoryPicker: () => Promise<FileSystemDirectoryHandle>;
+        const { effectiveOptions, gitignoreRules } =
+          await this.prepareScanOptions(handle, options);
+        const root = await this.scanDirectoryHandle(
+          handle,
+          handle.name,
+          '',
+          effectiveOptions,
+        );
+
+        this.clearCache();
+        this.rootNode.set(root);
+        return { rootNode: root, gitignoreRules };
+      } catch (err: unknown) {
+        const isAbort = err instanceof Error && err.name === 'AbortError';
+        if (isAbort) {
+          return { rootNode: null, gitignoreRules: [] };
         }
-      ).showDirectoryPicker;
-      const handle = await pickerFn();
-      this.currentProjectName.set(handle.name);
-
-      const effectiveOptions = await this.prepareScanOptions(handle, options);
-      const root = await this.scanDirectoryHandle(
-        handle,
-        handle.name,
-        '',
-        effectiveOptions,
-      );
-      this.clearCache();
-      this.rootNode.set(root);
-      return root;
-    } finally {
-      this.isScanning.set(false);
+        return await this.openInputDirectoryFallback(options);
+      } finally {
+        this.isScanning.set(false);
+      }
     }
+
+    return await this.openInputDirectoryFallback(options);
+  }
+
+  private openInputDirectoryFallback(
+    options: ScanOptions,
+  ): Promise<DirectoryScanResult> {
+    return new Promise((resolve) => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.setAttribute('webkitdirectory', '');
+      input.setAttribute('directory', '');
+      input.style.display = 'none';
+      document.body.appendChild(input);
+
+      input.onchange = async () => {
+        try {
+          if (input.files && input.files.length > 0) {
+            const res = await this.readFromFiles(input.files, options);
+            resolve(res);
+          } else {
+            resolve({ rootNode: null, gitignoreRules: [] });
+          }
+        } finally {
+          document.body.removeChild(input);
+        }
+      };
+
+      input.oncancel = () => {
+        document.body.removeChild(input);
+        resolve({ rootNode: null, gitignoreRules: [] });
+      };
+
+      input.click();
+    });
   }
 
   async readFromFiles(
     files: FileList | File[],
     options: ScanOptions,
-  ): Promise<FileNode | null> {
+  ): Promise<DirectoryScanResult> {
     this.isScanning.set(true);
     try {
       await this.wasmService.init();
 
       const fileArray = Array.from(files);
       if (fileArray.length === 0) {
-        return null;
+        return { rootNode: null, gitignoreRules: [] };
       }
 
       const firstPath = fileArray[0].webkitRelativePath || fileArray[0].name;
       const rootName = firstPath.split('/')[0] || 'project';
       this.currentProjectName.set(rootName);
 
-      const effectiveOptions = this.ensureDefaultExcludes(options);
+      const gitignoreFile = fileArray.find(
+        (f) =>
+          f.name === '.gitignore' ||
+          (f.webkitRelativePath &&
+            f.webkitRelativePath.split('/').pop() === '.gitignore'),
+      );
+
+      let effectiveOptions = this.ensureDefaultExcludes(options);
+      let gitignoreRules: string[] = [];
+      if (gitignoreFile && options.use_gitignore) {
+        const text = await gitignoreFile.text();
+        gitignoreRules = this.parseGitignoreText(text);
+        const mergedExcludes = new Set([...effectiveOptions.manual_excludes]);
+        for (const r of gitignoreRules) {
+          if (!options.gitignore_disabled_rules.includes(r)) {
+            mergedExcludes.add(r);
+          }
+        }
+        effectiveOptions = {
+          ...effectiveOptions,
+          manual_excludes: Array.from(mergedExcludes),
+        };
+      }
 
       const root: FileNode = {
         name: rootName,
@@ -219,7 +292,7 @@ export class FileSystemService {
 
       this.clearCache();
       this.rootNode.set(root);
-      return root;
+      return { rootNode: root, gitignoreRules };
     } finally {
       this.isScanning.set(false);
     }
@@ -228,7 +301,7 @@ export class FileSystemService {
   async readFromDataTransfer(
     items: DataTransferItemList,
     options: ScanOptions,
-  ): Promise<FileNode | null> {
+  ): Promise<DirectoryScanResult> {
     this.isScanning.set(true);
     try {
       await this.wasmService.init();
@@ -268,10 +341,8 @@ export class FileSystemService {
 
       if (rootHandle) {
         this.currentProjectName.set(rootHandle.name);
-        const effectiveOptions = await this.prepareScanOptions(
-          rootHandle,
-          options,
-        );
+        const { effectiveOptions, gitignoreRules } =
+          await this.prepareScanOptions(rootHandle, options);
         const root = await this.scanDirectoryHandle(
           rootHandle,
           rootHandle.name,
@@ -280,7 +351,7 @@ export class FileSystemService {
         );
         this.clearCache();
         this.rootNode.set(root);
-        return root;
+        return { rootNode: root, gitignoreRules };
       }
 
       if (rootEntry) {
@@ -294,7 +365,7 @@ export class FileSystemService {
         );
         this.clearCache();
         this.rootNode.set(root);
-        return root;
+        return { rootNode: root, gitignoreRules: [] };
       }
 
       const fileList: File[] = [];
@@ -312,7 +383,7 @@ export class FileSystemService {
         return await this.readFromFiles(fileList, options);
       }
 
-      return null;
+      return { rootNode: null, gitignoreRules: [] };
     } finally {
       this.isScanning.set(false);
     }
@@ -343,6 +414,10 @@ export class FileSystemService {
       }
     }
 
+    if (node.size > MAX_WEB_FILE_SIZE_BYTES) {
+      return `[File '${node.name}' omitted: exceeds max size limit of 1.5MB]`;
+    }
+
     let content = '';
     if (node.fileHandle) {
       const file = await node.fileHandle.getFile();
@@ -353,8 +428,8 @@ export class FileSystemService {
 
     if (content) {
       const lines = content.split('\n');
-      for (let i = 0; i < Math.min(lines.length, 50); i++) {
-        if (lines[i].length > 8000) {
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].length > MAX_SINGLE_LINE_LENGTH) {
           content = `[File '${node.name}' omitted: contains excessively long single-line data]`;
           break;
         }
@@ -379,15 +454,15 @@ export class FileSystemService {
   private async prepareScanOptions(
     rootHandle: FileSystemDirectoryHandle,
     options: ScanOptions,
-  ): Promise<ScanOptions> {
+  ): Promise<{ effectiveOptions: ScanOptions; gitignoreRules: string[] }> {
     const baseOptions = this.ensureDefaultExcludes(options);
     if (!baseOptions.use_gitignore) {
-      return baseOptions;
+      return { effectiveOptions: baseOptions, gitignoreRules: [] };
     }
 
     const gitignoreRules = await this.parseGitignoreFromHandle(rootHandle);
     if (gitignoreRules.length === 0) {
-      return baseOptions;
+      return { effectiveOptions: baseOptions, gitignoreRules: [] };
     }
 
     const mergedExcludes = new Set([...baseOptions.manual_excludes]);
@@ -398,9 +473,29 @@ export class FileSystemService {
     }
 
     return {
-      ...baseOptions,
-      manual_excludes: Array.from(mergedExcludes),
+      effectiveOptions: {
+        ...baseOptions,
+        manual_excludes: Array.from(mergedExcludes),
+      },
+      gitignoreRules,
     };
+  }
+
+  private parseGitignoreText(text: string): string[] {
+    const rules: string[] = [];
+    for (let line of text.split('\n')) {
+      line = line.trim();
+      if (!line || line.startsWith('#')) {
+        continue;
+      }
+      if (line.includes(' #')) {
+        line = line.split(' #')[0].trim();
+      }
+      if (line) {
+        rules.push(line);
+      }
+    }
+    return rules;
   }
 
   private async parseGitignoreFromHandle(
@@ -410,22 +505,7 @@ export class FileSystemService {
       const fileHandle = await dirHandle.getFileHandle('.gitignore');
       const file = await fileHandle.getFile();
       const text = await file.text();
-      const rules: string[] = [];
-
-      for (let line of text.split('\n')) {
-        line = line.trim();
-        if (!line || line.startsWith('#')) {
-          continue;
-        }
-        if (line.includes(' #')) {
-          line = line.split(' #')[0].trim();
-        }
-        if (line) {
-          rules.push(line);
-        }
-      }
-
-      return rules;
+      return this.parseGitignoreText(text);
     } catch {
       return [];
     }

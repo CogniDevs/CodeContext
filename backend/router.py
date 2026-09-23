@@ -55,6 +55,29 @@ async def select_folder_endpoint():
         raise HTTPException(status_code=500, detail=f"Ошибка диалога: {str(e)}")
 
 
+@api_router.get("/gitignore")
+async def get_gitignore_rules_endpoint(root_dir: str = Query(...)):
+    if not root_dir or not os.path.exists(root_dir):
+        return {"rules": []}
+    git_file = os.path.join(root_dir, ".gitignore")
+    if not os.path.isfile(git_file):
+        return {"rules": []}
+    try:
+        rules: List[str] = []
+        with open(git_file, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                trimmed = line.strip()
+                if not trimmed or trimmed.startswith("#"):
+                    continue
+                if " #" in trimmed:
+                    trimmed = trimmed.split(" #")[0].strip()
+                if trimmed:
+                    rules.append(trimmed)
+        return {"rules": rules}
+    except Exception:
+        return {"rules": []}
+
+
 @api_router.post("/scan", response_model=Dict[str, Any])
 async def scan_directory_endpoint(req: ScanRequest):
     if not os.path.exists(req.root_dir):
@@ -94,6 +117,10 @@ async def build_payload_endpoint(req: PayloadRequest):
     elif not req.options.git_diff_mode and req.root_dir:
         for rel_path in req.selected_paths:
             full_path = os.path.join(req.root_dir, rel_path)
+            file_name = os.path.basename(rel_path).lower()
+            if file_name == "icon_data.py" or file_name.endswith("_data.py"):
+                files_payload.append((rel_path, f"[Auto-generated base64 asset file '{file_name}' omitted]"))
+                continue
             if os.path.isfile(full_path):
                 try:
                     with open(full_path, "r", encoding="utf-8", errors="replace") as f:
@@ -258,6 +285,8 @@ async def save_file_endpoint(req: SaveFileRequest):
 
 @api_router.get("/watch/events")
 async def watch_events_stream():
+    loop = asyncio.get_running_loop()
+    watcher_service.set_event_loop(loop)
     queue = watcher_service.register_listener()
 
     async def event_generator():

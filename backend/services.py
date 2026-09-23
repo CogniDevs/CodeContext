@@ -226,7 +226,7 @@ class FileChangeEventHandler(FileSystemEventHandler):
         self.callback = callback
         self.ignored_segments = {
             '.git', '.idea', '.vscode', 'node_modules', '__pycache__',
-            '.venv', 'venv', 'dist', 'build', 'target', '.angular'
+            '.venv', 'venv', 'dist', 'build', 'target', '.angular', 'icon_data.py'
         }
 
     def on_any_event(self, event):
@@ -262,12 +262,21 @@ class ProjectWatcherService:
             return
         self.last_emit_time = now
 
-        if self.loop and self.event_queues:
-            for q in list(self.event_queues):
+        target_loop = self.loop
+        if target_loop is None or target_loop.is_closed():
+            try:
+                target_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return
+
+        for q in list(self.event_queues):
+            try:
                 asyncio.run_coroutine_threadsafe(
                     q.put({"type": "change", "path": file_path, "timestamp": now}),
-                    self.loop
+                    target_loop
                 )
+            except Exception:
+                pass
 
     def start_watching(self, path: str):
         self.stop_watching()

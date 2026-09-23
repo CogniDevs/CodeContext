@@ -33,6 +33,15 @@ const BUDGET_OPTIONS: BudgetOption[] = [
   { label: '200,000 токенов', value: 200000 },
 ];
 
+type BooleanTransformOption =
+  | 'xml_format'
+  | 'strip_comments'
+  | 'compress_whitespace'
+  | 'sanitize_secrets'
+  | 'skeleton_mode'
+  | 'auto_watch'
+  | 'git_diff_mode';
+
 @Component({
   selector: 'app-control-panel',
   templateUrl: './control-panel.component.html',
@@ -115,8 +124,8 @@ export class ControlPanelComponent implements OnInit {
     this.state.schedulePayloadGeneration();
   }
 
-  protected updateToggleOption(
-    key: keyof TransformOptions,
+  protected updateBooleanOption(
+    key: BooleanTransformOption,
     event: Event,
   ): void {
     const input = event.target as HTMLInputElement | null;
@@ -127,6 +136,20 @@ export class ControlPanelComponent implements OnInit {
     this.state.transformOptions.update((opts) => ({
       ...opts,
       [key]: value,
+    }));
+    this.state.schedulePayloadGeneration();
+  }
+
+  protected updateDiffLines(event: Event): void {
+    const input = event.target as HTMLInputElement | null;
+    if (!input) {
+      return;
+    }
+    const val = parseInt(input.value, 10);
+    const lines = isNaN(val) ? 3 : Math.max(0, Math.min(20, val));
+    this.state.transformOptions.update((opts) => ({
+      ...opts,
+      git_diff_context_lines: lines,
     }));
     this.state.schedulePayloadGeneration();
   }

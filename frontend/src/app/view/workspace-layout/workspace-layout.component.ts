@@ -9,7 +9,7 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { catchError, EMPTY, tap } from 'rxjs';
 
-import { PromptPreset } from '@models/context.models';
+import { PromptPreset, WatcherEvent } from '@models/context.models';
 import { ApiService } from '@services/api.service';
 import { FileSystemService } from '@services/file-system.service';
 import { PlatformService } from '@services/platform.service';
@@ -58,8 +58,18 @@ export class WorkspaceLayoutComponent implements OnInit {
       this.apiService
         .watchFileEvents()
         .pipe(
-          tap(() => {
-            this.stateService.schedulePayloadGeneration();
+          tap((event: WatcherEvent) => {
+            if (this.stateService.transformOptions().auto_watch ?? true) {
+              const relPath = event.path
+                ? event.path.replace(/\\/g, '/').split('/').pop()
+                : '';
+              this.stateService.appendLog(
+                relPath
+                  ? `Авто-слежение: зафиксировано изменение '${relPath}'`
+                  : 'Авто-слежение: зафиксированы изменения в проекте',
+              );
+              this.stateService.schedulePayloadGeneration();
+            }
           }),
           catchError(() => EMPTY),
           takeUntilDestroyed(),
@@ -112,17 +122,25 @@ export class WorkspaceLayoutComponent implements OnInit {
     }
 
     if (transfer.items && transfer.items.length > 0) {
-      await this.fileSystemService.readFromDataTransfer(
+      const res = await this.fileSystemService.readFromDataTransfer(
         transfer.items,
         this.stateService.scanOptions(),
       );
-      await this.stateService.generatePayload();
+      if (res.rootNode) {
+        this.stateService.setRootNode(res.rootNode);
+        this.stateService.setProjectGitignoreRules(res.gitignoreRules);
+        await this.stateService.generatePayload();
+      }
     } else if (transfer.files && transfer.files.length > 0) {
-      await this.fileSystemService.readFromFiles(
+      const res = await this.fileSystemService.readFromFiles(
         transfer.files,
         this.stateService.scanOptions(),
       );
-      await this.stateService.generatePayload();
+      if (res.rootNode) {
+        this.stateService.setRootNode(res.rootNode);
+        this.stateService.setProjectGitignoreRules(res.gitignoreRules);
+        await this.stateService.generatePayload();
+      }
     }
   }
 }

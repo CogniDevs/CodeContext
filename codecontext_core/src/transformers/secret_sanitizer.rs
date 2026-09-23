@@ -77,9 +77,15 @@ pub fn calculate_entropy(text: &str) -> f64 {
     if text.is_empty() {
         return 0.0;
     }
+    let bounded_text = if text.len() > 256 {
+        &text[..256]
+    } else {
+        text
+    };
+
     let mut frequency = HashMap::new();
-    let total_count = text.chars().count() as f64;
-    for c in text.chars() {
+    let total_count = bounded_text.chars().count() as f64;
+    for c in bounded_text.chars() {
         *frequency.entry(c).or_insert(0usize) += 1;
     }
     let mut entropy = 0.0;
@@ -97,7 +103,7 @@ pub fn sanitize_secrets(text: &str) -> String {
     }
 
     let token_re = HIGH_ENTROPY_TOKEN_RE.get_or_init(|| {
-        Regex::new(r#"\b[a-zA-Z0-9_\-\+/=]{21,}\b"#).unwrap()
+        Regex::new(r#"\b[a-zA-Z0-9_\-\+/=]{21,256}\b"#).unwrap()
     });
 
     result = token_re

@@ -16,6 +16,7 @@ import { WasmService } from '@services/wasm.service';
 
 const STORAGE_KEY_SCAN = 'codecontext_scan_options';
 const STORAGE_KEY_TRANSFORM = 'codecontext_transform_options';
+const MAX_PREVIEW_LENGTH = 120000;
 
 const FALLBACK_SCAN_OPTIONS: ScanOptions = {
   use_gitignore: true,
@@ -69,6 +70,7 @@ const FALLBACK_TRANSFORM_OPTIONS: TransformOptions = {
   skeleton_mode: false,
   xml_format: true,
   always_send_full_tree: false,
+  auto_watch: false,
   system_prompt: '',
   comment_rules_json: null,
   max_token_budget: null,
@@ -99,8 +101,10 @@ export class StateService {
   readonly generatedPayload = signal<string>('');
   readonly isGenerating = signal<boolean>(false);
   readonly gitModifiedFiles = signal<string[]>([]);
+  readonly projectGitignoreRules = signal<string[]>([]);
   readonly workLogs = signal<string[]>(['CodeContext инициализирован.']);
 
+  private readonly fileSizesMap = new Map<string, number>();
   private generateTimer: ReturnType<typeof setTimeout> | null = null;
 
   readonly selectedFilesCount = computed<number>(
@@ -112,16 +116,37 @@ export class StateService {
     if (!payload || payload.startsWith('[')) {
       return 0;
     }
-    return this.wasm.countTokens(payload);
+    if (payload.length > 400000 && !this.platform.isDesktop()) {
+      return Math.round(payload.length / 3.3);
+    }
+    try {
+      return this.wasm.countTokens(payload);
+    } catch {
+      return Math.round(payload.length / 3.3);
+    }
   });
 
   readonly totalSizeBytes = computed<number>(() => {
-    const root = this.fileSystem.rootNode();
-    return root ? this.calculateSelectedSize(root) : 0;
+    const selected = this.selectedPaths();
+    let sum = 0;
+    for (const relPath of selected) {
+      sum += this.fileSizesMap.get(relPath) || 0;
+    }
+    return sum;
   });
 
   readonly totalSizeKb = computed<number>(() => {
     return Math.round((this.totalSizeBytes() / 1024) * 10) / 10;
+  });
+
+  readonly previewPayload = computed<string>(() => {
+    const payload = this.generatedPayload();
+    if (payload.length <= MAX_PREVIEW_LENGTH) {
+      return payload;
+    }
+    const truncated = payload.substring(0, MAX_PREVIEW_LENGTH);
+    const totalKb = Math.round(payload.length / 1024);
+    return `${truncated}\n\n[... Превью усечено для плавности интерфейса (полный размер: ${totalKb} KB). Полный контекст копируется в буфер и записывается в файл без сокращений ...]`;
   });
 
   constructor() {
@@ -181,6 +206,8 @@ export class StateService {
     if (!node || typeof node !== 'object' || !node.name) {
       this.fileSystem.setRootNode(null);
       this.rootPath.set('');
+      this.fileSizesMap.clear();
+      this.projectGitignoreRules.set([]);
       return;
     }
 
@@ -188,12 +215,16 @@ export class StateService {
       node.children = [];
     }
 
+    this.fileSizesMap.clear();
+    this.cacheFileSizes(node);
+
     this.fileSystem.setRootNode(node, rootPath);
     if (rootPath) {
       this.rootPath.set(rootPath);
       const defaultExport = `${rootPath.replace(/[\\/]$/, '')}/code_context.txt`;
       this.exportPath.set(defaultExport);
       this.appendLog(`Rust Scan: ${rootPath}`);
+      this.fetchProjectGitignoreRules(rootPath);
     } else {
       this.rootPath.set(node.full_path || node.name);
       this.appendLog(`Web Scan: ${node.name}`);
@@ -202,6 +233,24 @@ export class StateService {
 
   setRootPath(path: string): void {
     this.rootPath.set(path);
+  }
+
+  async fetchProjectGitignoreRules(path?: string): Promise<void> {
+    const targetDir = path || this.rootPath();
+    if (this.platform.isDesktop() && targetDir) {
+      try {
+        const res = await firstValueFrom(this.api.getGitignoreRules(targetDir));
+        if (res && Array.isArray(res.rules)) {
+          this.projectGitignoreRules.set(res.rules);
+        }
+      } catch {
+        this.projectGitignoreRules.set([]);
+      }
+    }
+  }
+
+  setProjectGitignoreRules(rules: string[]): void {
+    this.projectGitignoreRules.set(rules);
   }
 
   resetExpandedToRoot(): void {
@@ -481,6 +530,7 @@ export class StateService {
             }),
           );
           filesPayload.push(...chunkResults);
+          await new Promise((resolve) => setTimeout(resolve, 0));
         }
 
         const allAncestorPaths = new Set<string>();
@@ -517,6 +567,15 @@ export class StateService {
     }
   }
 
+  private cacheFileSizes(node: FileNode): void {
+    if (!node.is_dir) {
+      this.fileSizesMap.set(node.rel_path, node.size);
+    }
+    for (const child of node.children || []) {
+      this.cacheFileSizes(child);
+    }
+  }
+
   private collectAllDirPaths(node: FileNode, acc: Set<string>): void {
     if (node.is_dir) {
       acc.add(node.rel_path);
@@ -547,17 +606,6 @@ export class StateService {
       }
     }
     return null;
-  }
-
-  private calculateSelectedSize(node: FileNode): number {
-    let size = 0;
-    if (!node.is_dir && this.selectedPaths().has(node.rel_path)) {
-      size += node.size;
-    }
-    for (const child of node.children || []) {
-      size += this.calculateSelectedSize(child);
-    }
-    return size;
   }
 
   private collectAllFilePaths(node: FileNode, acc: Set<string>): void {

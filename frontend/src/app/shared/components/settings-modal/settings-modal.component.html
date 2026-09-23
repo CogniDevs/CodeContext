@@ -188,24 +188,32 @@
         @if (activeTab() === "gitignore") {
           <div class="tab-content">
             <p class="info-text">
-              Управление глобально отключенными правилами .gitignore.<br />
-              <span class="badge-sample active">Синий бадж</span> — Правило
-              ИГНОРИРУЕТСЯ (файлы скроются) &nbsp;
-              <span class="badge-sample">Серый бадж</span> — Правило ОТКЛЮЧЕНО
-              (файлы попадут в сканирование)
+              Правила из .gitignore вашего проекта.<br />
+              <span class="badge-sample active">Синий бадж</span> — правило
+              АКТИВНО (файлы скрыты).<br />
+              <span class="badge-sample">Серый бадж</span> — правило ОТКЛЮЧЕНО
+              (файлы будут принудительно добавлены в сканирование).
             </p>
 
-            <div class="badges-grid">
-              @for (rule of gitignoreDisabledRules(); track rule) {
-                <button
-                  type="button"
-                  class="badge-btn"
-                  (click)="removeGitignoreDisabledRule(rule)"
-                >
-                  {{ rule }} ✕
-                </button>
-              }
-            </div>
+            @if (projectGitignoreRules().length > 0) {
+              <div class="badges-grid">
+                @for (rule of projectGitignoreRules(); track rule) {
+                  <button
+                    type="button"
+                    class="badge-btn"
+                    [class.active]="isGitignoreRuleActive(rule)"
+                    (click)="toggleGitignoreRule(rule)"
+                  >
+                    {{ rule }}
+                  </button>
+                }
+              </div>
+            } @else {
+              <p class="text-muted">
+                В открытом проекте не найден файл .gitignore или в нем
+                отсутствуют правила.
+              </p>
+            }
           </div>
         }
       </div>

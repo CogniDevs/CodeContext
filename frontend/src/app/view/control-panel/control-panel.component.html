@@ -63,7 +63,7 @@
           <input
             type="checkbox"
             [checked]="state.transformOptions().xml_format"
-            (change)="updateToggleOption('xml_format', $event)"
+            (change)="updateBooleanOption('xml_format', $event)"
           />
           <span>Формат XML</span>
         </label>
@@ -72,7 +72,7 @@
           <input
             type="checkbox"
             [checked]="state.transformOptions().strip_comments"
-            (change)="updateToggleOption('strip_comments', $event)"
+            (change)="updateBooleanOption('strip_comments', $event)"
           />
           <span>Без комментариев</span>
         </label>
@@ -81,7 +81,7 @@
           <input
             type="checkbox"
             [checked]="state.transformOptions().compress_whitespace"
-            (change)="updateToggleOption('compress_whitespace', $event)"
+            (change)="updateBooleanOption('compress_whitespace', $event)"
           />
           <span>Сжать код</span>
         </label>
@@ -90,7 +90,7 @@
           <input
             type="checkbox"
             [checked]="state.transformOptions().sanitize_secrets"
-            (change)="updateToggleOption('sanitize_secrets', $event)"
+            (change)="updateBooleanOption('sanitize_secrets', $event)"
           />
           <span>Скрыть секреты</span>
         </label>
@@ -99,7 +99,7 @@
           <input
             type="checkbox"
             [checked]="state.transformOptions().skeleton_mode"
-            (change)="updateToggleOption('skeleton_mode', $event)"
+            (change)="updateBooleanOption('skeleton_mode', $event)"
           />
           <span>Скелет (сигнатуры)</span>
         </label>
@@ -108,7 +108,7 @@
           <input
             type="checkbox"
             [checked]="state.transformOptions().auto_watch ?? true"
-            (change)="updateToggleOption('auto_watch', $event)"
+            (change)="updateBooleanOption('auto_watch', $event)"
           />
           <span>Авто-слежение</span>
         </label>
@@ -126,7 +126,7 @@
             type="checkbox"
             [disabled]="!isGitDiffAvailable()"
             [checked]="state.transformOptions().git_diff_mode"
-            (change)="updateToggleOption('git_diff_mode', $event)"
+            (change)="updateBooleanOption('git_diff_mode', $event)"
           />
           <span class="icon icon-git-diff"></span>
           <span>Git Diff (Дельта)</span>
@@ -145,7 +145,7 @@
             max="20"
             class="form-control form-control-sm"
             [value]="state.transformOptions().git_diff_context_lines"
-            (input)="updateToggleOption('git_diff_context_lines', $event)"
+            (input)="updateDiffLines($event)"
           />
         </div>
       }
@@ -186,7 +186,7 @@
     <textarea
       class="form-control preview-textarea text-mono"
       readonly
-      [value]="state.generatedPayload()"
+      [value]="state.previewPayload()"
       placeholder="Скомпилированный контекст проекта появится здесь после выбора файлов..."
     ></textarea>
   </div>

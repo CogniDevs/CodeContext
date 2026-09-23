@@ -1,5 +1,5 @@
 import { inject, Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
 import {
@@ -43,6 +43,11 @@ export class ApiService {
       '/api/select-folder',
       {},
     );
+  }
+
+  getGitignoreRules(rootDir: string): Observable<{ rules: string[] }> {
+    const params = new HttpParams().set('root_dir', rootDir);
+    return this.http.get<{ rules: string[] }>('/api/gitignore', { params });
   }
 
   scanDirectory(

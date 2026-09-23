@@ -6,7 +6,6 @@ import {
   exhaustMap,
   from,
   merge,
-  of,
   Subject,
   switchMap,
   tap,
@@ -31,9 +30,9 @@ export class PathsPanelComponent {
   protected readonly fileSystem = inject(FileSystemService);
   private readonly api = inject(ApiService);
 
-  protected readonly browseFolderTrigger$ = new Subject<void>();
+  protected readonly browseDesktopTrigger$ = new Subject<void>();
 
-  private readonly desktopFolderHandler$ = this.browseFolderTrigger$.pipe(
+  private readonly desktopFolderHandler$ = this.browseDesktopTrigger$.pipe(
     exhaustMap(() => {
       if (!this.platform.isDesktop()) {
         return EMPTY;
@@ -49,7 +48,6 @@ export class PathsPanelComponent {
             .pipe(
               tap((tree: FileNode) => {
                 this.state.setRootNode(tree, res.path);
-                this.state.selectAllFiles(true);
               }),
               switchMap(() => from(this.state.generatePayload())),
               tap(() => {
@@ -72,34 +70,7 @@ export class PathsPanelComponent {
     }),
   );
 
-  private readonly webFolderHandler$ = this.browseFolderTrigger$.pipe(
-    exhaustMap(() => {
-      if (this.platform.isDesktop()) {
-        return EMPTY;
-      }
-      return from(
-        this.fileSystem.openDirectoryPicker(this.state.scanOptions()),
-      ).pipe(
-        tap(() => {
-          this.state.selectAllFiles(true);
-        }),
-        switchMap(() => from(this.state.generatePayload())),
-        catchError((err: unknown) => {
-          const isAbort = err instanceof Error && err.name === 'AbortError';
-          if (!isAbort) {
-            const message = this.extractErrorMessage(err);
-            this.state.appendLog(`Ошибка открытия директории: ${message}`);
-          }
-          return of(null);
-        }),
-      );
-    }),
-  );
-
-  private readonly sideEffects$ = merge(
-    this.desktopFolderHandler$,
-    this.webFolderHandler$,
-  );
+  private readonly sideEffects$ = merge(this.desktopFolderHandler$);
 
   constructor() {
     this.sideEffects$.pipe(takeUntilDestroyed()).subscribe();
@@ -123,8 +94,28 @@ export class PathsPanelComponent {
     this.state.setExportPath(path);
   }
 
-  protected browseProjectDir(): void {
-    this.browseFolderTrigger$.next();
+  protected async browseProjectDir(): Promise<void> {
+    if (this.platform.isDesktop()) {
+      this.browseDesktopTrigger$.next();
+      return;
+    }
+
+    try {
+      const res = await this.fileSystem.openDirectoryPicker(
+        this.state.scanOptions(),
+      );
+      if (res.rootNode) {
+        this.state.setRootNode(res.rootNode);
+        this.state.setProjectGitignoreRules(res.gitignoreRules);
+        await this.state.generatePayload();
+      }
+    } catch (err: unknown) {
+      const isAbort = err instanceof Error && err.name === 'AbortError';
+      if (!isAbort) {
+        const message = this.extractErrorMessage(err);
+        this.state.appendLog(`Ошибка открытия директории: ${message}`);
+      }
+    }
   }
 
   protected browseExportPath(): void {
