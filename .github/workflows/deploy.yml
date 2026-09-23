@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - master
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -12,17 +13,17 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
+  group: 'pages'
   cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust
+      - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -46,22 +47,22 @@ jobs:
         with:
           node-version: 22
           cache: 'npm'
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
         run: |
-          cd web
+          cd frontend
           npm ci
 
-      - name: Build Angular
+      - name: Build Angular SPA
         run: |
-          cd web
+          cd frontend
           npx ng build --configuration production --base-href=/CodeContext/
 
-      - name: Upload artifact
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: web/dist/codecontext-web/browser
+          path: frontend/dist/codecontext-web/browser
 
   deploy:
     environment:

@@ -1,0 +1,30 @@
+{
+  "name": "codecontext-frontend",
+  "version": "0.1.2",
+  "private": true,
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve",
+    "build:wasm": "cd ../codecontext_core && wasm-pack build --target web --out-dir pkg -- --features wasm && node -e \"try{require('fs').unlinkSync('pkg/.gitignore')}catch(e){}\"",
+    "prebuild": "npm run build:wasm",
+    "build": "ng build --configuration production",
+    "watch": "ng build --watch --configuration development"
+  },
+  "dependencies": {
+    "@angular/common": "^19.2.0",
+    "@angular/compiler": "^19.2.0",
+    "@angular/core": "^19.2.0",
+    "@angular/forms": "^19.2.0",
+    "@angular/platform-browser": "^19.2.0",
+    "@angular/router": "^19.2.0",
+    "codecontext_core": "file:../codecontext_core/pkg",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "@angular-devkit/build-angular": "^19.2.0",
+    "@angular/cli": "^19.2.0",
+    "@angular/compiler-cli": "^19.2.0",
+    "typescript": "~5.7.2"
+  }
+}
