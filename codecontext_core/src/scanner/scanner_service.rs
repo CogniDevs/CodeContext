@@ -85,7 +85,8 @@ pub fn is_ignored(rel_path: &str, is_dir: bool, options: &ScanOptions) -> bool {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn scan_directory(root_dir: &str, options: &ScanOptions) -> Option<FileNode> {
-    let root_path = Path::new(root_dir);
+    let clean_root = root_dir.trim_end_matches(['\\', '/']);
+    let root_path = Path::new(clean_root);
     if !root_path.exists() || !root_path.is_dir() {
         return None;
     }
@@ -114,8 +115,12 @@ pub fn scan_directory(root_dir: &str, options: &ScanOptions) -> Option<FileNode>
     }
     let gitignore = gitignore_builder.build().ok();
 
-    let root_name = root_path.file_name()?.to_string_lossy().to_string();
-    let mut root_node = FileNode::new(root_name, root_dir.to_string(), String::new(), true, 0);
+    let root_name = root_path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| clean_root.to_string());
+
+    let mut root_node = FileNode::new(root_name, clean_root.to_string(), String::new(), true, 0);
 
     fn populate_node(
         current_path: &Path,

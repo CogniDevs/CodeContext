@@ -1,0 +1,37 @@
+<header class="app-header">
+  <div class="header-brand">
+    <span class="icon icon-app app-logo"></span>
+    <span class="logo">CodeContext</span>
+    <span class="badge" [class.badge-primary]="platformService.isDesktop()">
+      {{ platformBadge() }}
+    </span>
+
+    @if (projectName()) {
+      <div class="project-badge">
+        <span class="icon icon-folder"></span>
+        <span class="project-name">{{ projectName() }}</span>
+      </div>
+    }
+  </div>
+
+  <div class="header-actions">
+    <button type="button" class="btn btn-secondary" (click)="onOpenSettings()">
+      <span class="icon icon-settings"></span>
+      <span>Параметры</span>
+    </button>
+
+    <button
+      type="button"
+      class="btn btn-secondary theme-toggle"
+      (click)="onToggleTheme()"
+    >
+      @if (themeService.currentTheme() === "dark") {
+        <span class="icon icon-sun"></span>
+        <span>Светлая</span>
+      } @else {
+        <span class="icon icon-moon"></span>
+        <span>Темная</span>
+      }
+    </button>
+  </div>
+</header>
