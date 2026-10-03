@@ -12,6 +12,21 @@ def run_cmd(cmd, cwd=None, env=None):
         sys.exit(1)
 
 
+def ensure_windows_ico(icon_ico, icon_png):
+    if os.path.exists(icon_ico):
+        return icon_ico
+    if os.path.exists(icon_png):
+        try:
+            from PIL import Image
+            img = Image.open(icon_png)
+            img.save(icon_ico, format='ICO', sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
+            print(f'Generated Windows icon: {icon_ico}')
+            return icon_ico
+        except Exception as e:
+            print(f'Warning: Could not convert PNG to ICO: {e}')
+    return None
+
+
 def build():
     root_dir = os.path.dirname(os.path.abspath(__file__))
     core_dir = os.path.join(root_dir, 'codecontext_core')
@@ -55,13 +70,7 @@ def build():
             print('Installing frontend npm dependencies...')
             run_cmd(['npm', 'install'], cwd=frontend_dir)
 
-        print('Compiling WASM pkg...')
-        run_cmd(['wasm-pack', 'build', '--target', 'web', '--out-dir', 'pkg', '--', '--features', 'wasm'], cwd=core_dir)
-        pkg_gitignore = os.path.join(core_dir, 'pkg', '.gitignore')
-        if os.path.exists(pkg_gitignore):
-            os.remove(pkg_gitignore)
-
-        print('Building Angular SPA distribution...')
+        print('Building Angular SPA distribution (including WASM)...')
         run_cmd(['npm', 'run', 'build'], cwd=frontend_dir)
 
     print('\n--- 3. Packaging Desktop Binary with PyInstaller ---')
@@ -103,10 +112,9 @@ def build():
             if os.path.exists(dll_path):
                 pyinstaller_args.append(f'--add-binary={dll_path};.')
 
-        if os.path.exists(icon_ico):
-            pyinstaller_args.append(f'--icon={icon_ico}')
-        elif os.path.exists(icon_png):
-            pyinstaller_args.append(f'--icon={icon_png}')
+        valid_ico = ensure_windows_ico(icon_ico, icon_png)
+        if valid_ico:
+            pyinstaller_args.append(f'--icon={valid_ico}')
     elif sys.platform == 'darwin':
         if os.path.exists(icon_png):
             pyinstaller_args.append(f'--icon={icon_png}')

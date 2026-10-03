@@ -36,12 +36,6 @@ jobs:
       - name: Install wasm-pack
         uses: taiki-e/install-action@wasm-pack
 
-      - name: Build WASM Core
-        run: |
-          cd codecontext_core
-          wasm-pack build --target web --out-dir pkg -- --features wasm
-          rm -f pkg/.gitignore
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -54,10 +48,10 @@ jobs:
           cd frontend
           npm ci
 
-      - name: Build Angular SPA
+      - name: Build WASM & Angular SPA
         run: |
           cd frontend
-          npx ng build --configuration production --base-href=/CodeContext/
+          npm run build -- --base-href=/CodeContext/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

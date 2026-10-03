@@ -31,26 +31,6 @@
               {
                 "glob": "**/*",
                 "input": "public"
-              },
-              {
-                "glob": "**/*.json",
-                "input": "../resources",
-                "output": "assets/resources"
-              },
-              {
-                "glob": "*.svg",
-                "input": "../resources/icons/ui",
-                "output": "assets/icons"
-              },
-              {
-                "glob": "*.svg",
-                "input": "../resources/icons/material",
-                "output": "assets/icons/material"
-              },
-              {
-                "glob": "**/*",
-                "input": "../codecontext_core/pkg",
-                "output": "assets/wasm"
               }
             ],
             "styles": ["src/styles.scss"],
