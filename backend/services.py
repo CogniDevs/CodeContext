@@ -285,6 +285,7 @@ class ProjectWatcherService:
 
         self.current_path = path
         self.observer = Observer()
+        self.observer.daemon = True
         handler = FileChangeEventHandler(self._on_file_changed)
         try:
             self.observer.schedule(handler, self.current_path, recursive=True)
@@ -296,7 +297,7 @@ class ProjectWatcherService:
         if self.observer:
             try:
                 self.observer.stop()
-                self.observer.join(timeout=1.0)
+                self.observer.join(timeout=0.5)
             except Exception:
                 pass
             self.observer = None
