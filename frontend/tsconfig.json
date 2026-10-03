@@ -19,6 +19,7 @@
       "@core/*": ["./src/app/core/*"],
       "@models/*": ["./src/app/core/models/*"],
       "@services/*": ["./src/app/core/services/*"],
+      "@layouts/*": ["./src/app/layouts/*"],
       "@shared/*": ["./src/app/shared/*"],
       "@view/*": ["./src/app/view/*"],
       "@styles/*": ["./src/styles/*"],

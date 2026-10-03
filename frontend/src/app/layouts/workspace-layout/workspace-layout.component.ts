@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   inject,
   OnInit,
   signal,
@@ -9,18 +10,23 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { catchError, EMPTY, tap } from 'rxjs';
 
-import { PromptPreset, WatcherEvent } from '@models/context.models';
+import { PromptPreset } from '@models/prompt.model';
+import { WatcherEvent } from '@models/api.model';
 import { ApiService } from '@services/api.service';
 import { FileSystemService } from '@services/file-system.service';
 import { PlatformService } from '@services/platform.service';
 import { StateService } from '@services/state.service';
-import { PromptModalComponent } from '@shared/components/prompt-modal/prompt-modal.component';
-import { SettingsModalComponent } from '@shared/components/settings-modal/settings-modal.component';
-import { ControlPanelComponent } from '@view/control-panel/control-panel.component';
-import { FooterComponent } from '@view/footer/footer.component';
-import { HeaderComponent } from '@view/header/header.component';
+import { HeaderComponent } from '@layouts/header/header.component';
+import { FooterComponent } from '@layouts/footer/footer.component';
 import { PathsPanelComponent } from '@view/paths-panel/paths-panel.component';
 import { TreePanelComponent } from '@view/tree-panel/tree-panel.component';
+import { ControlPanelComponent } from '@view/control-panel/control-panel.component';
+import { PromptModalComponent } from '@shared/components/prompt-modal/prompt-modal.component';
+import { SettingsModalComponent } from '@shared/components/settings-modal/settings-modal.component';
+import {
+  extractErrorMessage,
+  isDesktopNativeFile,
+} from '@core/utils/type-guards';
 
 @Component({
   selector: 'app-workspace-layout',
@@ -43,6 +49,7 @@ export class WorkspaceLayoutComponent implements OnInit {
   protected readonly stateService = inject(StateService);
   protected readonly platformService = inject(PlatformService);
   private readonly apiService = inject(ApiService);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly promptModal =
     viewChild.required<PromptModalComponent>('promptModal');
@@ -52,6 +59,8 @@ export class WorkspaceLayoutComponent implements OnInit {
     viewChild<ControlPanelComponent>('controlPanel');
 
   readonly isDragOver = signal<boolean>(false);
+
+  private dragCounter = 0;
 
   constructor() {
     if (this.platformService.isDesktop()) {
@@ -72,7 +81,7 @@ export class WorkspaceLayoutComponent implements OnInit {
             }
           }),
           catchError(() => EMPTY),
-          takeUntilDestroyed(),
+          takeUntilDestroyed(this.destroyRef),
         )
         .subscribe();
     }
@@ -102,23 +111,68 @@ export class WorkspaceLayoutComponent implements OnInit {
   protected onDragOver(event: DragEvent): void {
     event.preventDefault();
     event.stopPropagation();
-    this.isDragOver.set(true);
+    if (!this.isDragOver()) {
+      this.isDragOver.set(true);
+    }
+  }
+
+  protected onDragEnter(event: DragEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.dragCounter++;
+    if (this.dragCounter === 1) {
+      this.isDragOver.set(true);
+    }
   }
 
   protected onDragLeave(event: DragEvent): void {
     event.preventDefault();
     event.stopPropagation();
-    this.isDragOver.set(false);
+    this.dragCounter--;
+    if (this.dragCounter <= 0) {
+      this.dragCounter = 0;
+      this.isDragOver.set(false);
+    }
   }
 
   protected async onDrop(event: DragEvent): Promise<void> {
     event.preventDefault();
     event.stopPropagation();
+    this.dragCounter = 0;
     this.isDragOver.set(false);
 
     const transfer = event.dataTransfer;
     if (!transfer) {
       return;
+    }
+
+    if (
+      this.platformService.isDesktop() &&
+      transfer.files &&
+      transfer.files.length > 0
+    ) {
+      const firstFile = transfer.files[0];
+      if (firstFile && isDesktopNativeFile(firstFile)) {
+        const targetPath = firstFile.path;
+        this.stateService.isGenerating.set(true);
+        this.apiService
+          .scanDirectory(targetPath, this.stateService.scanOptions())
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe({
+            next: (tree) => {
+              this.stateService.setRootNode(tree, targetPath);
+              this.stateService.generatePayload();
+            },
+            error: (err: unknown) => {
+              this.stateService.isGenerating.set(false);
+              const msg = extractErrorMessage(err);
+              this.stateService.appendLog(
+                `Ошибка сканирования перетащенной папки: ${msg}`,
+              );
+            },
+          });
+        return;
+      }
     }
 
     if (transfer.items && transfer.items.length > 0) {

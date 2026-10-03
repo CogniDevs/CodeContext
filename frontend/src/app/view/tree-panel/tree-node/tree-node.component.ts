@@ -7,7 +7,7 @@ import {
   input,
 } from '@angular/core';
 
-import { FileNode } from '@models/context.models';
+import { FileNode } from '@models/tree.model';
 import { StateService } from '@services/state.service';
 import { FileIconComponent } from '@shared/components/file-icon/file-icon.component';
 
@@ -37,8 +37,8 @@ export class TreeNodeComponent {
   });
 
   readonly selectionState = computed<{
-    checked: boolean;
-    indeterminate: boolean;
+    readonly checked: boolean;
+    readonly indeterminate: boolean;
   }>(() => {
     return this.computeSelectionState(this.node(), this.state.selectedPaths());
   });
@@ -51,13 +51,11 @@ export class TreeNodeComponent {
     return this.checkNodeVisible(this.node(), query);
   });
 
-  readonly formattedSize = computed<string>(() => {
-    return `${(this.node().size / 1024).toFixed(1)} KB`;
-  });
+  readonly formattedSize = computed<string>(
+    () => `${(this.node().size / 1024).toFixed(1)} KB`,
+  );
 
-  readonly paddingLeft = computed<number>(() => {
-    return this.depth() * 16;
-  });
+  readonly paddingLeft = computed<number>(() => this.depth() * 16);
 
   protected toggleExpand(event?: Event): void {
     if (event) {
@@ -78,15 +76,15 @@ export class TreeNodeComponent {
   }
 
   protected onCheckboxChange(event: Event): void {
-    const inputElem = event.target as HTMLInputElement | null;
-    const checked = inputElem ? inputElem.checked : false;
-    this.toggleNodeRecursive(this.node(), checked);
+    if (event.target instanceof HTMLInputElement) {
+      this.toggleNodeRecursive(this.node(), event.target.checked);
+    }
   }
 
   private computeSelectionState(
     node: FileNode,
-    selectedSet: Set<string>,
-  ): { checked: boolean; indeterminate: boolean } {
+    selectedSet: ReadonlySet<string>,
+  ): { readonly checked: boolean; readonly indeterminate: boolean } {
     if (selectedSet.size === 0) {
       return { checked: false, indeterminate: false };
     }

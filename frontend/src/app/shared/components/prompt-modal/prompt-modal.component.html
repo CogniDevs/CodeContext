@@ -28,9 +28,9 @@
             </div>
 
             <div class="form-group flex-1">
-              <label class="form-label" for="promptText"
-                >Текст системной инструкции для ИИ-ассистента:</label
-              >
+              <label class="form-label" for="promptText">
+                Текст системной инструкции для ИИ-ассистента:
+              </label>
               <textarea
                 id="promptText"
                 class="form-control prompt-textarea text-mono"
@@ -98,7 +98,7 @@
         <button
           class="btn"
           type="button"
-          [disabled]="isSaveDisabled()"
+          [disabled]="form.invalid"
           (click)="onSave()"
         >
           {{

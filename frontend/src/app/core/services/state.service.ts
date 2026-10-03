@@ -1,83 +1,59 @@
-import { computed, effect, inject, Injectable, signal } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
+import {
+  computed,
+  DestroyRef,
+  effect,
+  inject,
+  Injectable,
+  signal,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { HttpClient } from '@angular/common/http';
+import {
+  catchError,
+  debounceTime,
+  EMPTY,
+  firstValueFrom,
+  from,
+  map,
+  merge,
+  Observable,
+  of,
+  Subject,
+  switchMap,
+  tap,
+} from 'rxjs';
 
+import { cleanNodeForWasm, FileNode } from '@models/tree.model';
+import {
+  DefaultSettingsConfig,
+  ScanOptions,
+  TransformOptions,
+} from '@models/settings.model';
+import { GitStatusResponse } from '@models/git.model';
 import {
   DependenciesRequest,
-  FileNode,
   PayloadRequest,
-  ScanOptions,
   StandaloneTreeRequest,
-  TransformOptions,
-} from '@models/context.models';
+} from '@models/api.model';
 import { ApiService } from '@services/api.service';
 import { FileSystemService } from '@services/file-system.service';
 import { PlatformService } from '@services/platform.service';
 import { WasmService } from '@services/wasm.service';
-
-const STORAGE_KEY_SCAN = 'codecontext_scan_options';
-const STORAGE_KEY_TRANSFORM = 'codecontext_transform_options';
-const MAX_PREVIEW_LENGTH = 120000;
-
-const FALLBACK_SCAN_OPTIONS: ScanOptions = {
-  use_gitignore: true,
-  ignore_binary: true,
-  ignore_lockfiles: true,
-  whitelist_extensions: [],
-  manual_excludes: [
-    '.git',
-    'node_modules',
-    'dist',
-    'target',
-    '.angular',
-    'build',
-    'out',
-    '__pycache__',
-    '.venv',
-    'venv',
-    '.idea',
-    '.vscode',
-    'icon_data.py',
-  ],
-  gitignore_disabled_rules: [],
-  binary_extensions: [
-    '.png',
-    '.jpg',
-    '.jpeg',
-    '.gif',
-    '.ico',
-    '.pdf',
-    '.zip',
-    '.exe',
-    '.dll',
-    '.so',
-    '.dylib',
-    '.wasm',
-    '.svg',
-  ],
-  lockfiles_excludes: [
-    'package-lock.json',
-    'yarn.lock',
-    'pnpm-lock.yaml',
-    'Cargo.lock',
-    'go.sum',
-  ],
-};
-
-const FALLBACK_TRANSFORM_OPTIONS: TransformOptions = {
-  strip_comments: false,
-  compress_whitespace: false,
-  sanitize_secrets: false,
-  skeleton_mode: false,
-  xml_format: true,
-  always_send_full_tree: false,
-  auto_watch: false,
-  system_prompt: '',
-  comment_rules_json: null,
-  max_token_budget: null,
-  git_diff_mode: false,
-  git_diff_context_lines: 3,
-  git_diff_text: null,
-};
+import {
+  FALLBACK_SCAN_OPTIONS,
+  FALLBACK_TRANSFORM_OPTIONS,
+  MAX_PREVIEW_LENGTH,
+  STORAGE_KEY_SCAN,
+  STORAGE_KEY_TRANSFORM,
+} from '@core/utils/constants';
+import {
+  extractErrorMessage,
+  isBoolean,
+  isNumber,
+  isRecord,
+  isString,
+  isStringArray,
+} from '@core/utils/type-guards';
 
 @Injectable({
   providedIn: 'root',
@@ -87,6 +63,14 @@ export class StateService {
   private readonly api = inject(ApiService);
   private readonly wasm = inject(WasmService);
   private readonly fileSystem = inject(FileSystemService);
+  private readonly http = inject(HttpClient);
+  private readonly destroyRef = inject(DestroyRef);
+
+  private readonly fileSizesMap = new Map<string, number>();
+
+  private readonly generateTrigger$ = new Subject<void>();
+  private readonly loadResourcesTrigger$ = new Subject<void>();
+  private readonly fetchGitignoreTrigger$ = new Subject<string>();
 
   readonly scanOptions = signal<ScanOptions>(this.loadScanOptions());
   readonly transformOptions = signal<TransformOptions>(
@@ -100,57 +84,163 @@ export class StateService {
   readonly focusedPath = signal<string | null>(null);
   readonly generatedPayload = signal<string>('');
   readonly isGenerating = signal<boolean>(false);
-  readonly gitModifiedFiles = signal<string[]>([]);
-  readonly projectGitignoreRules = signal<string[]>([]);
-  readonly workLogs = signal<string[]>(['CodeContext инициализирован.']);
-
-  private readonly fileSizesMap = new Map<string, number>();
-  private generateTimer: ReturnType<typeof setTimeout> | null = null;
+  readonly gitModifiedFiles = signal<readonly string[]>([]);
+  readonly projectGitignoreRules = signal<readonly string[]>([]);
+  readonly workLogs = signal<readonly string[]>([
+    'CodeContext инициализирован.',
+  ]);
 
   readonly selectedFilesCount = computed<number>(
     () => this.selectedPaths().size,
   );
 
   readonly tokenCount = computed<number>(() => {
-    const payload = this.generatedPayload();
-    if (!payload || payload.startsWith('[')) {
+    if (!this.generatedPayload() || this.generatedPayload().startsWith('[')) {
       return 0;
     }
-    if (payload.length > 400000 && !this.platform.isDesktop()) {
-      return Math.round(payload.length / 3.3);
+    if (this.generatedPayload().length > 400000 && !this.platform.isDesktop()) {
+      return Math.round(this.generatedPayload().length / 3.3);
     }
     try {
-      return this.wasm.countTokens(payload);
+      return this.wasm.countTokens(this.generatedPayload());
     } catch {
-      return Math.round(payload.length / 3.3);
+      return Math.round(this.generatedPayload().length / 3.3);
     }
   });
 
   readonly totalSizeBytes = computed<number>(() => {
-    const selected = this.selectedPaths();
     let sum = 0;
-    for (const relPath of selected) {
-      sum += this.fileSizesMap.get(relPath) || 0;
+    for (const relPath of this.selectedPaths()) {
+      sum += this.fileSizesMap.get(relPath) ?? 0;
     }
     return sum;
   });
 
-  readonly totalSizeKb = computed<number>(() => {
-    return Math.round((this.totalSizeBytes() / 1024) * 10) / 10;
-  });
+  readonly totalSizeKb = computed<number>(
+    () => Math.round((this.totalSizeBytes() / 1024) * 10) / 10,
+  );
 
   readonly previewPayload = computed<string>(() => {
-    const payload = this.generatedPayload();
-    if (payload.length <= MAX_PREVIEW_LENGTH) {
-      return payload;
+    if (this.generatedPayload().length <= MAX_PREVIEW_LENGTH) {
+      return this.generatedPayload();
     }
-    const truncated = payload.substring(0, MAX_PREVIEW_LENGTH);
-    const totalKb = Math.round(payload.length / 1024);
+    const truncated = this.generatedPayload().substring(0, MAX_PREVIEW_LENGTH);
+    const totalKb = Math.round(this.generatedPayload().length / 1024);
     return `${truncated}\n\n[... Превью усечено для плавности интерфейса (полный размер: ${totalKb} KB). Полный контекст копируется в буфер и записывается в файл без сокращений ...]`;
   });
 
+  private readonly generateHandler$ = this.generateTrigger$.pipe(
+    debounceTime(250),
+    switchMap(() => from(this.executePayloadGeneration())),
+  );
+
+  private readonly fetchGitignoreHandler$ = this.fetchGitignoreTrigger$.pipe(
+    switchMap((targetDir) => {
+      if (!this.platform.isDesktop() || !this.isAbsoluteDiskPath(targetDir)) {
+        this.projectGitignoreRules.set([]);
+        return EMPTY;
+      }
+      return this.api.getGitignoreRules(targetDir).pipe(
+        tap((res) => {
+          if (res && Array.isArray(res.rules)) {
+            this.projectGitignoreRules.set(res.rules);
+          }
+        }),
+        catchError(() => {
+          this.projectGitignoreRules.set([]);
+          return EMPTY;
+        }),
+      );
+    }),
+  );
+
+  private readonly loadResourcesHandler$ = this.loadResourcesTrigger$.pipe(
+    switchMap(() => {
+      const hasSavedScan = Boolean(localStorage.getItem(STORAGE_KEY_SCAN));
+      const hasSavedTransform = Boolean(
+        localStorage.getItem(STORAGE_KEY_TRANSFORM),
+      );
+
+      return this.http
+        .get<DefaultSettingsConfig>('assets/resources/default_settings.json')
+        .pipe(
+          tap((settings: DefaultSettingsConfig) => {
+            if (!settings) {
+              return;
+            }
+
+            if (!hasSavedScan) {
+              this.scanOptions.update((opts) => ({
+                ...opts,
+                use_gitignore: settings.use_gitignore ?? opts.use_gitignore,
+                ignore_binary: settings.ignore_binary ?? opts.ignore_binary,
+                ignore_lockfiles:
+                  settings.ignore_lockfiles ?? opts.ignore_lockfiles,
+                manual_excludes: Array.from(
+                  new Set([
+                    ...opts.manual_excludes,
+                    ...(settings.global_excludes ?? []),
+                    'icon_data.py',
+                  ]),
+                ),
+                binary_extensions: Array.from(
+                  new Set([
+                    ...opts.binary_extensions,
+                    ...(settings.binary_extensions ?? []),
+                  ]),
+                ),
+                lockfiles_excludes: Array.from(
+                  new Set([
+                    ...opts.lockfiles_excludes,
+                    ...(settings.lockfiles_excludes ?? []),
+                  ]),
+                ),
+              }));
+            }
+
+            if (!hasSavedTransform) {
+              this.transformOptions.update((opts) => ({
+                ...opts,
+                xml_format: settings.xml_format ?? opts.xml_format,
+                strip_comments: settings.strip_comments ?? opts.strip_comments,
+                compress_whitespace:
+                  settings.compress_whitespace ?? opts.compress_whitespace,
+                sanitize_secrets:
+                  settings.sanitize_secrets ?? opts.sanitize_secrets,
+                always_send_full_tree: settings.always_send_full_tree ?? false,
+              }));
+            }
+          }),
+          switchMap(() =>
+            this.http
+              .get('assets/resources/comment_rules.json', {
+                responseType: 'text',
+              })
+              .pipe(
+                tap((rulesText) => {
+                  if (rulesText) {
+                    this.transformOptions.update((opts) => ({
+                      ...opts,
+                      comment_rules_json: rulesText,
+                    }));
+                  }
+                }),
+                catchError(() => EMPTY),
+              ),
+          ),
+          catchError(() => EMPTY),
+        );
+    }),
+  );
+
+  private readonly sideEffects$ = merge(
+    this.generateHandler$,
+    this.fetchGitignoreHandler$,
+    this.loadResourcesHandler$,
+  );
+
   constructor() {
-    this.loadResources();
+    this.sideEffects$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
 
     effect(() => {
       localStorage.setItem(
@@ -176,17 +266,20 @@ export class StateService {
       const hasRoot =
         this.fileSystem.rootNode() !== null || this.rootPath().length > 0;
       const hasSelection = this.selectedPaths().size > 0;
-      this.transformOptions();
+      const isDiff = this.transformOptions().git_diff_mode;
 
-      if (hasRoot && (hasSelection || this.transformOptions().git_diff_mode)) {
+      if (hasRoot && (hasSelection || isDiff)) {
         this.schedulePayloadGeneration();
       } else {
-        if (this.generateTimer) {
-          clearTimeout(this.generateTimer);
-        }
         this.generatedPayload.set('');
       }
     });
+
+    this.loadResourcesTrigger$.next();
+  }
+
+  isAbsoluteDiskPath(path: string): boolean {
+    return /^(?:[a-zA-Z]:[\\/]|\\\\|\/)/.test(path.trim());
   }
 
   appendLog(message: string): void {
@@ -211,15 +304,11 @@ export class StateService {
       return;
     }
 
-    if (!Array.isArray(node.children)) {
-      node.children = [];
-    }
-
     this.fileSizesMap.clear();
     this.cacheFileSizes(node);
 
     this.fileSystem.setRootNode(node, rootPath);
-    if (rootPath) {
+    if (rootPath && this.isAbsoluteDiskPath(rootPath)) {
       this.rootPath.set(rootPath);
       const defaultExport = `${rootPath.replace(/[\\/]$/, '')}/code_context.txt`;
       this.exportPath.set(defaultExport);
@@ -235,21 +324,12 @@ export class StateService {
     this.rootPath.set(path);
   }
 
-  async fetchProjectGitignoreRules(path?: string): Promise<void> {
-    const targetDir = path || this.rootPath();
-    if (this.platform.isDesktop() && targetDir) {
-      try {
-        const res = await firstValueFrom(this.api.getGitignoreRules(targetDir));
-        if (res && Array.isArray(res.rules)) {
-          this.projectGitignoreRules.set(res.rules);
-        }
-      } catch {
-        this.projectGitignoreRules.set([]);
-      }
-    }
+  fetchProjectGitignoreRules(path?: string): void {
+    const targetDir = path ?? this.rootPath();
+    this.fetchGitignoreTrigger$.next(targetDir);
   }
 
-  setProjectGitignoreRules(rules: string[]): void {
+  setProjectGitignoreRules(rules: readonly string[]): void {
     this.projectGitignoreRules.set(rules);
   }
 
@@ -321,14 +401,9 @@ export class StateService {
   }
 
   selectGitModifiedFilesOnly(): void {
-    const modified = this.gitModifiedFiles();
-    if (modified.length === 0) {
-      this.appendLog('Git: нет измененных файлов для выделения.');
-      return;
-    }
-
     const root = this.fileSystem.rootNode();
-    if (!root) {
+    if (!root || this.gitModifiedFiles().length === 0) {
+      this.appendLog('Git: нет измененных файлов для выделения.');
       return;
     }
 
@@ -336,7 +411,7 @@ export class StateService {
     this.collectAllFilePaths(root, availablePaths);
 
     const matchingSet = new Set<string>();
-    for (const modPath of modified) {
+    for (const modPath of this.gitModifiedFiles()) {
       if (availablePaths.has(modPath)) {
         matchingSet.add(modPath);
       }
@@ -348,30 +423,33 @@ export class StateService {
   }
 
   schedulePayloadGeneration(): void {
-    if (this.generateTimer) {
-      clearTimeout(this.generateTimer);
-    }
-    this.generateTimer = setTimeout(() => {
-      this.generatePayload();
-    }, 250);
+    this.generateTrigger$.next();
   }
 
-  async fetchGitStatus(): Promise<void> {
-    if (!this.platform.isDesktop() || !this.rootPath()) {
-      return;
+  fetchGitStatus(): Observable<readonly string[]> {
+    if (
+      !this.platform.isDesktop() ||
+      !this.isAbsoluteDiskPath(this.rootPath())
+    ) {
+      this.gitModifiedFiles.set([]);
+      return of([]);
     }
 
-    try {
-      const res = await firstValueFrom(this.api.getGitStatus(this.rootPath()));
-      if (res.success) {
-        this.gitModifiedFiles.set(res.modified_files);
-        this.appendLog(`Git Status: ${res.message}`);
-      } else {
+    return this.api.getGitStatus(this.rootPath()).pipe(
+      tap((res: GitStatusResponse) => {
+        if (res.success) {
+          this.gitModifiedFiles.set(res.modified_files);
+          this.appendLog(`Git Status: ${res.message}`);
+        } else {
+          this.gitModifiedFiles.set([]);
+        }
+      }),
+      map((res: GitStatusResponse) => (res.success ? res.modified_files : [])),
+      catchError(() => {
         this.gitModifiedFiles.set([]);
-      }
-    } catch {
-      this.gitModifiedFiles.set([]);
-    }
+        return of([]);
+      }),
+    );
   }
 
   async traceDependenciesForFocusedFile(): Promise<number> {
@@ -391,7 +469,7 @@ export class StateService {
     const content = await this.fileSystem.getFileContent(focusedNode);
 
     let deps: string[] = [];
-    if (this.platform.isDesktop() && this.rootPath()) {
+    if (this.platform.isDesktop() && this.isAbsoluteDiskPath(this.rootPath())) {
       const req: DependenciesRequest = {
         root_dir: this.rootPath(),
         target_rel_path: focusedRelPath,
@@ -434,16 +512,13 @@ export class StateService {
       (this.rootPath()
         ? this.rootPath().split(/[\\/]/).pop() || 'project'
         : 'project');
-    const selectedSet = this.selectedPaths();
     const xml = this.transformOptions().xml_format;
 
-    if (this.platform.isDesktop() && this.rootPath()) {
+    if (this.platform.isDesktop() && this.isAbsoluteDiskPath(this.rootPath())) {
       const req: StandaloneTreeRequest = {
         root_name: rootName,
-        root_node: root
-          ? (this.fileSystem.cleanNodeForWasm(root) as Record<string, unknown>)
-          : null,
-        selected_paths: Array.from(selectedSet),
+        root_node: root ? cleanNodeForWasm(root) : null,
+        selected_paths: Array.from(this.selectedPaths()),
         xml_format: xml,
       };
       const res = await firstValueFrom(this.api.generateStandaloneTree(req));
@@ -454,11 +529,11 @@ export class StateService {
       }
     } else {
       await this.wasm.init();
-      const cleanedRoot = root ? this.fileSystem.cleanNodeForWasm(root) : null;
+      const cleanedRoot = root ? cleanNodeForWasm(root) : null;
       const treeText = this.wasm.generateStandaloneTree(
         rootName,
         cleanedRoot ? JSON.stringify(cleanedRoot) : '',
-        Array.from(selectedSet),
+        Array.from(this.selectedPaths()),
         xml,
       );
       if (treeText) {
@@ -471,6 +546,10 @@ export class StateService {
   }
 
   async generatePayload(): Promise<string> {
+    return this.executePayloadGeneration();
+  }
+
+  private async executePayloadGeneration(): Promise<string> {
     const root = this.fileSystem.rootNode();
     const projectName = this.fileSystem.currentProjectName() || 'project';
 
@@ -479,8 +558,10 @@ export class StateService {
       return '';
     }
 
-    const selectedSet = this.selectedPaths();
-    if (selectedSet.size === 0 && !this.transformOptions().git_diff_mode) {
+    if (
+      this.selectedPaths().size === 0 &&
+      !this.transformOptions().git_diff_mode
+    ) {
       this.generatedPayload.set('');
       return '';
     }
@@ -488,16 +569,14 @@ export class StateService {
     this.isGenerating.set(true);
 
     try {
-      if (this.platform.isDesktop() && this.rootPath()) {
+      const isDesktopDiskScan =
+        this.platform.isDesktop() && this.isAbsoluteDiskPath(this.rootPath());
+
+      if (isDesktopDiskScan) {
         const req: PayloadRequest = {
           root_dir: this.rootPath(),
-          root_node: root
-            ? (this.fileSystem.cleanNodeForWasm(root) as Record<
-                string,
-                unknown
-              >)
-            : null,
-          selected_paths: Array.from(selectedSet),
+          root_node: root ? cleanNodeForWasm(root) : null,
+          selected_paths: Array.from(this.selectedPaths()),
           options: this.transformOptions(),
         };
 
@@ -510,7 +589,7 @@ export class StateService {
 
       if (root) {
         const filesToRead: FileNode[] = [];
-        this.collectSelectedFileNodes(root, selectedSet, filesToRead);
+        this.collectSelectedFileNodes(root, this.selectedPaths(), filesToRead);
 
         const filesPayload: Array<[string, string]> = [];
         const chunkSize = 15;
@@ -534,7 +613,7 @@ export class StateService {
         }
 
         const allAncestorPaths = new Set<string>();
-        for (const relPath of selectedSet) {
+        for (const relPath of this.selectedPaths()) {
           allAncestorPaths.add(relPath);
           const parts = relPath.split('/');
           for (let i = 1; i < parts.length; i++) {
@@ -542,7 +621,7 @@ export class StateService {
           }
         }
 
-        const cleanedRoot = this.fileSystem.cleanNodeForWasm(root);
+        const cleanedRoot = cleanNodeForWasm(root);
         const payload = this.wasm.buildPayload(
           projectName,
           JSON.stringify(cleanedRoot),
@@ -557,9 +636,8 @@ export class StateService {
 
       this.generatedPayload.set('');
       return '';
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      const errMsg = `[Error generating context: ${message}]`;
+    } catch (err: unknown) {
+      const errMsg = `[Error generating context: ${extractErrorMessage(err)}]`;
       this.generatedPayload.set(errMsg);
       return errMsg;
     } finally {
@@ -571,7 +649,7 @@ export class StateService {
     if (!node.is_dir) {
       this.fileSizesMap.set(node.rel_path, node.size);
     }
-    for (const child of node.children || []) {
+    for (const child of node.children) {
       this.cacheFileSizes(child);
     }
   }
@@ -579,7 +657,7 @@ export class StateService {
   private collectAllDirPaths(node: FileNode, acc: Set<string>): void {
     if (node.is_dir) {
       acc.add(node.rel_path);
-      for (const child of node.children || []) {
+      for (const child of node.children) {
         this.collectAllDirPaths(child, acc);
       }
     }
@@ -589,7 +667,7 @@ export class StateService {
     if (!node.is_dir) {
       acc.push(node.rel_path);
     }
-    for (const child of node.children || []) {
+    for (const child of node.children) {
       this.getAllFilePaths(child, acc);
     }
     return acc;
@@ -599,7 +677,7 @@ export class StateService {
     if (node.rel_path === relPath) {
       return node;
     }
-    for (const child of node.children || []) {
+    for (const child of node.children) {
       const found = this.findNodeByRelPath(child, relPath);
       if (found) {
         return found;
@@ -612,106 +690,71 @@ export class StateService {
     if (!node.is_dir) {
       acc.add(node.rel_path);
     }
-    for (const child of node.children || []) {
+    for (const child of node.children) {
       this.collectAllFilePaths(child, acc);
     }
   }
 
   private collectSelectedFileNodes(
     node: FileNode,
-    selectedSet: Set<string>,
+    selectedSet: ReadonlySet<string>,
     acc: FileNode[],
   ): void {
     if (!node.is_dir && selectedSet.has(node.rel_path)) {
       acc.push(node);
     }
-    for (const child of node.children || []) {
+    for (const child of node.children) {
       this.collectSelectedFileNodes(child, selectedSet, acc);
     }
-  }
-
-  private loadResources(): void {
-    const hasSavedScan = !!localStorage.getItem(STORAGE_KEY_SCAN);
-    const hasSavedTransform = !!localStorage.getItem(STORAGE_KEY_TRANSFORM);
-
-    fetch('assets/resources/default_settings.json')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((settings) => {
-        if (!settings) return;
-
-        if (!hasSavedScan) {
-          this.scanOptions.update((opts) => ({
-            ...opts,
-            use_gitignore: settings.use_gitignore ?? opts.use_gitignore,
-            ignore_binary: settings.ignore_binary ?? opts.ignore_binary,
-            ignore_lockfiles:
-              settings.ignore_lockfiles ?? opts.ignore_lockfiles,
-            manual_excludes: Array.from(
-              new Set([
-                ...opts.manual_excludes,
-                ...(settings.global_excludes || []),
-                'icon_data.py',
-              ]),
-            ),
-            binary_extensions: Array.from(
-              new Set([
-                ...opts.binary_extensions,
-                ...(settings.binary_extensions || []),
-              ]),
-            ),
-            lockfiles_excludes: Array.from(
-              new Set([
-                ...opts.lockfiles_excludes,
-                ...(settings.lockfiles_excludes || []),
-              ]),
-            ),
-          }));
-        }
-
-        if (!hasSavedTransform) {
-          this.transformOptions.update((opts) => ({
-            ...opts,
-            xml_format: settings.xml_format ?? opts.xml_format,
-            strip_comments: settings.strip_comments ?? opts.strip_comments,
-            compress_whitespace:
-              settings.compress_whitespace ?? opts.compress_whitespace,
-            sanitize_secrets:
-              settings.sanitize_secrets ?? opts.sanitize_secrets,
-            always_send_full_tree: settings.always_send_full_tree ?? false,
-          }));
-        }
-      })
-      .catch(() => {});
-
-    fetch('assets/resources/comment_rules.json')
-      .then((res) => (res.ok ? res.text() : null))
-      .then((rulesText) => {
-        if (rulesText) {
-          this.transformOptions.update((opts) => ({
-            ...opts,
-            comment_rules_json: rulesText,
-          }));
-        }
-      })
-      .catch(() => {});
   }
 
   private loadScanOptions(): ScanOptions {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_SCAN);
       if (saved) {
-        const parsed = JSON.parse(saved) as Partial<ScanOptions>;
-        return {
-          ...FALLBACK_SCAN_OPTIONS,
-          ...parsed,
-          manual_excludes: Array.from(
-            new Set([
-              ...FALLBACK_SCAN_OPTIONS.manual_excludes,
-              ...(parsed.manual_excludes || []),
-              'icon_data.py',
-            ]),
-          ),
-        };
+        const parsed: unknown = JSON.parse(saved);
+        if (isRecord(parsed)) {
+          return {
+            use_gitignore: isBoolean(parsed['use_gitignore'])
+              ? parsed['use_gitignore']
+              : FALLBACK_SCAN_OPTIONS.use_gitignore,
+            ignore_binary: isBoolean(parsed['ignore_binary'])
+              ? parsed['ignore_binary']
+              : FALLBACK_SCAN_OPTIONS.ignore_binary,
+            ignore_lockfiles: isBoolean(parsed['ignore_lockfiles'])
+              ? parsed['ignore_lockfiles']
+              : FALLBACK_SCAN_OPTIONS.ignore_lockfiles,
+            whitelist_extensions: isStringArray(parsed['whitelist_extensions'])
+              ? parsed['whitelist_extensions']
+              : FALLBACK_SCAN_OPTIONS.whitelist_extensions,
+            manual_excludes: isStringArray(parsed['manual_excludes'])
+              ? Array.from(
+                  new Set([
+                    ...FALLBACK_SCAN_OPTIONS.manual_excludes,
+                    ...parsed['manual_excludes'],
+                    'icon_data.py',
+                  ]),
+                )
+              : FALLBACK_SCAN_OPTIONS.manual_excludes,
+            gitignore_disabled_rules: isStringArray(
+              parsed['gitignore_disabled_rules'],
+            )
+              ? parsed['gitignore_disabled_rules']
+              : FALLBACK_SCAN_OPTIONS.gitignore_disabled_rules,
+            binary_extensions: isStringArray(parsed['binary_extensions'])
+              ? parsed['binary_extensions']
+              : FALLBACK_SCAN_OPTIONS.binary_extensions,
+            lockfiles_excludes: isStringArray(parsed['lockfiles_excludes'])
+              ? parsed['lockfiles_excludes']
+              : FALLBACK_SCAN_OPTIONS.lockfiles_excludes,
+            output_file_path: isString(parsed['output_file_path'])
+              ? parsed['output_file_path']
+              : null,
+            auto_watch: isBoolean(parsed['auto_watch'])
+              ? parsed['auto_watch']
+              : false,
+          };
+        }
       }
     } catch {}
     return FALLBACK_SCAN_OPTIONS;
@@ -721,12 +764,50 @@ export class StateService {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_TRANSFORM);
       if (saved) {
-        const parsed = JSON.parse(saved) as Partial<TransformOptions>;
-        return {
-          ...FALLBACK_TRANSFORM_OPTIONS,
-          ...parsed,
-          always_send_full_tree: parsed.always_send_full_tree ?? false,
-        };
+        const parsed: unknown = JSON.parse(saved);
+        if (isRecord(parsed)) {
+          return {
+            strip_comments: isBoolean(parsed['strip_comments'])
+              ? parsed['strip_comments']
+              : FALLBACK_TRANSFORM_OPTIONS.strip_comments,
+            compress_whitespace: isBoolean(parsed['compress_whitespace'])
+              ? parsed['compress_whitespace']
+              : FALLBACK_TRANSFORM_OPTIONS.compress_whitespace,
+            sanitize_secrets: isBoolean(parsed['sanitize_secrets'])
+              ? parsed['sanitize_secrets']
+              : FALLBACK_TRANSFORM_OPTIONS.sanitize_secrets,
+            skeleton_mode: isBoolean(parsed['skeleton_mode'])
+              ? parsed['skeleton_mode']
+              : FALLBACK_TRANSFORM_OPTIONS.skeleton_mode,
+            xml_format: isBoolean(parsed['xml_format'])
+              ? parsed['xml_format']
+              : FALLBACK_TRANSFORM_OPTIONS.xml_format,
+            always_send_full_tree: isBoolean(parsed['always_send_full_tree'])
+              ? parsed['always_send_full_tree']
+              : FALLBACK_TRANSFORM_OPTIONS.always_send_full_tree,
+            auto_watch: isBoolean(parsed['auto_watch'])
+              ? parsed['auto_watch']
+              : false,
+            system_prompt: isString(parsed['system_prompt'])
+              ? parsed['system_prompt']
+              : FALLBACK_TRANSFORM_OPTIONS.system_prompt,
+            comment_rules_json: isString(parsed['comment_rules_json'])
+              ? parsed['comment_rules_json']
+              : null,
+            max_token_budget: isNumber(parsed['max_token_budget'])
+              ? parsed['max_token_budget']
+              : null,
+            git_diff_mode: isBoolean(parsed['git_diff_mode'])
+              ? parsed['git_diff_mode']
+              : false,
+            git_diff_context_lines: isNumber(parsed['git_diff_context_lines'])
+              ? parsed['git_diff_context_lines']
+              : 3,
+            git_diff_text: isString(parsed['git_diff_text'])
+              ? parsed['git_diff_text']
+              : null,
+          };
+        }
       }
     } catch {}
     return FALLBACK_TRANSFORM_OPTIONS;

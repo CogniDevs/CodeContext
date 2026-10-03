@@ -2,31 +2,41 @@ import { inject, Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
+import { FileNode } from '@models/tree.model';
+import { ScanOptions } from '@models/settings.model';
 import {
   CompilePromptResponse,
   CustomRuleRequest,
-  DependenciesRequest,
-  DependenciesResponse,
-  FileNode,
-  GitDiffRequest,
-  GitDiffResponse,
-  GitStatusRequest,
-  GitStatusResponse,
-  PayloadRequest,
-  PayloadResponse,
+  PromptMutationResponse,
   PromptPreset,
   RuleItem,
+  RuleMutationResponse,
+} from '@models/prompt.model';
+import {
+  GitDiffRequest,
+  GitDiffResponse,
+  GitignoreRulesResponse,
+  GitStatusRequest,
+  GitStatusResponse,
+} from '@models/git.model';
+import {
+  DependenciesRequest,
+  DependenciesResponse,
+  OperationStatusResponse,
+  PayloadRequest,
+  PayloadResponse,
   SaveFileRequest,
   SaveFileResponse,
-  ScanOptions,
   ScanRequest,
+  SelectPathResponse,
   ServiceStatus,
   StandaloneTreeRequest,
   StandaloneTreeResponse,
   TokenCountRequest,
   TokenCountResponse,
   WatcherEvent,
-} from '@models/context.models';
+} from '@models/api.model';
+import { isRecord } from '@core/utils/type-guards';
 
 @Injectable({
   providedIn: 'root',
@@ -38,16 +48,23 @@ export class ApiService {
     return this.http.get<ServiceStatus>('/api/status');
   }
 
-  selectFolder(): Observable<{ success: boolean; path: string }> {
-    return this.http.post<{ success: boolean; path: string }>(
-      '/api/select-folder',
-      {},
-    );
+  selectFolder(): Observable<SelectPathResponse> {
+    return this.http.post<SelectPathResponse>('/api/select-folder', {});
   }
 
-  getGitignoreRules(rootDir: string): Observable<{ rules: string[] }> {
+  selectSaveFile(
+    defaultFilename?: string,
+    extension?: string,
+  ): Observable<SelectPathResponse> {
+    return this.http.post<SelectPathResponse>('/api/select-save-file', {
+      default_filename: defaultFilename ?? '',
+      extension: extension ?? '',
+    });
+  }
+
+  getGitignoreRules(rootDir: string): Observable<GitignoreRulesResponse> {
     const params = new HttpParams().set('root_dir', rootDir);
-    return this.http.get<{ rules: string[] }>('/api/gitignore', { params });
+    return this.http.get<GitignoreRulesResponse>('/api/gitignore', { params });
   }
 
   scanDirectory(
@@ -102,12 +119,13 @@ export class ApiService {
     return this.http.get<Record<string, unknown>>('/api/settings');
   }
 
-  saveSettings(
-    settingsData: Record<string, unknown>,
-  ): Observable<{ status: string; settings: Record<string, unknown> }> {
+  saveSettings(settingsData: Record<string, unknown>): Observable<{
+    readonly status: string;
+    readonly settings: Record<string, unknown>;
+  }> {
     return this.http.post<{
-      status: string;
-      settings: Record<string, unknown>;
+      readonly status: string;
+      readonly settings: Record<string, unknown>;
     }>('/api/settings', settingsData);
   }
 
@@ -115,30 +133,20 @@ export class ApiService {
     return this.http.get<Record<string, PromptPreset>>('/api/prompts');
   }
 
-  updatePrompt(
-    preset: PromptPreset,
-  ): Observable<{ status: string; prompt: PromptPreset }> {
-    return this.http.post<{ status: string; prompt: PromptPreset }>(
-      '/api/prompts',
-      preset,
-    );
+  updatePrompt(preset: PromptPreset): Observable<PromptMutationResponse> {
+    return this.http.post<PromptMutationResponse>('/api/prompts', preset);
   }
 
-  deletePrompt(key: string): Observable<{ status: string }> {
-    return this.http.delete<{ status: string }>(`/api/prompts/${key}`);
+  deletePrompt(key: string): Observable<OperationStatusResponse> {
+    return this.http.delete<OperationStatusResponse>(`/api/prompts/${key}`);
   }
 
   getRules(): Observable<Record<string, RuleItem[]>> {
     return this.http.get<Record<string, RuleItem[]>>('/api/rules');
   }
 
-  addCustomRule(
-    rule: CustomRuleRequest,
-  ): Observable<{ status: string; rule: RuleItem }> {
-    return this.http.post<{ status: string; rule: RuleItem }>(
-      '/api/rules/custom',
-      rule,
-    );
+  addCustomRule(rule: CustomRuleRequest): Observable<RuleMutationResponse> {
+    return this.http.post<RuleMutationResponse>('/api/rules/custom', rule);
   }
 
   compilePrompt(
@@ -158,16 +166,29 @@ export class ApiService {
     return new Observable<WatcherEvent>((subscriber) => {
       const eventSource = new EventSource('/api/watch/events');
 
-      eventSource.addEventListener('file_change', (event: MessageEvent) => {
-        try {
-          const parsed: WatcherEvent = JSON.parse(event.data);
-          subscriber.next(parsed);
-        } catch (err) {
-          subscriber.error(err);
+      eventSource.addEventListener('file_change', (event: Event) => {
+        if (event instanceof MessageEvent && typeof event.data === 'string') {
+          try {
+            const parsed: unknown = JSON.parse(event.data);
+            if (
+              isRecord(parsed) &&
+              typeof parsed['type'] === 'string' &&
+              typeof parsed['path'] === 'string' &&
+              typeof parsed['timestamp'] === 'number'
+            ) {
+              subscriber.next({
+                type: parsed['type'],
+                path: parsed['path'],
+                timestamp: parsed['timestamp'],
+              });
+            }
+          } catch (err: unknown) {
+            subscriber.error(err);
+          }
         }
       });
 
-      eventSource.onerror = (error) => {
+      eventSource.onerror = (error: Event) => {
         subscriber.error(error);
       };
 

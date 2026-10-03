@@ -17,12 +17,12 @@ import {
   tap,
 } from 'rxjs';
 
-import { FileNode } from '@models/context.models';
+import { FileNode } from '@models/tree.model';
 import { ApiService } from '@services/api.service';
 import { FileSystemService } from '@services/file-system.service';
 import { PlatformService } from '@services/platform.service';
 import { StateService } from '@services/state.service';
-import { TreeNodeComponent } from './tree-node/tree-node.component';
+import { TreeNodeComponent } from '@view/tree-panel/tree-node/tree-node.component';
 
 @Component({
   selector: 'app-tree-panel',
@@ -38,13 +38,13 @@ export class TreePanelComponent {
   protected readonly platformService = inject(PlatformService);
   private readonly apiService = inject(ApiService);
 
-  readonly searchQuery = signal<string>('');
-  readonly isSmartMenuOpen = signal<boolean>(false);
-
   protected readonly refreshTrigger$ = new Subject<void>();
   protected readonly gitSelectTrigger$ = new Subject<void>();
   protected readonly depsSelectTrigger$ = new Subject<void>();
   protected readonly copyTreeTrigger$ = new Subject<void>();
+
+  readonly searchQuery = signal<string>('');
+  readonly isSmartMenuOpen = signal<boolean>(false);
 
   readonly isGitAvailable = computed<boolean>(() => {
     return this.platformService.isGitAvailable();
@@ -157,7 +157,8 @@ export class TreePanelComponent {
   }
 
   protected onSearchInput(event: Event): void {
-    const input = event.target as HTMLInputElement | null;
-    this.searchQuery.set(input ? input.value : '');
+    if (event.target instanceof HTMLInputElement) {
+      this.searchQuery.set(event.target.value);
+    }
   }
 }

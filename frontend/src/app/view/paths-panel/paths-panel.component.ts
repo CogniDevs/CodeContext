@@ -11,11 +11,15 @@ import {
   tap,
 } from 'rxjs';
 
-import { FileNode } from '@models/context.models';
+import { FileNode } from '@models/tree.model';
 import { ApiService } from '@services/api.service';
 import { FileSystemService } from '@services/file-system.service';
 import { PlatformService } from '@services/platform.service';
 import { StateService } from '@services/state.service';
+import {
+  extractErrorMessage,
+  hasSaveFilePicker,
+} from '@core/utils/type-guards';
 
 @Component({
   selector: 'app-paths-panel',
@@ -31,6 +35,7 @@ export class PathsPanelComponent {
   private readonly api = inject(ApiService);
 
   protected readonly browseDesktopTrigger$ = new Subject<void>();
+  protected readonly browseSaveTrigger$ = new Subject<void>();
 
   private readonly desktopFolderHandler$ = this.browseDesktopTrigger$.pipe(
     exhaustMap(() => {
@@ -55,14 +60,14 @@ export class PathsPanelComponent {
               }),
               catchError((err: unknown) => {
                 this.state.isGenerating.set(false);
-                const message = this.extractErrorMessage(err);
+                const message = extractErrorMessage(err);
                 this.state.appendLog(`Ошибка сканирования: ${message}`);
                 return EMPTY;
               }),
             );
         }),
         catchError((err: unknown) => {
-          const message = this.extractErrorMessage(err);
+          const message = extractErrorMessage(err);
           this.state.appendLog(`Ошибка диалога: ${message}`);
           return EMPTY;
         }),
@@ -70,28 +75,52 @@ export class PathsPanelComponent {
     }),
   );
 
-  private readonly sideEffects$ = merge(this.desktopFolderHandler$);
+  private readonly desktopSaveHandler$ = this.browseSaveTrigger$.pipe(
+    exhaustMap(() => {
+      if (!this.platform.isDesktop()) {
+        return EMPTY;
+      }
+      const extension = this.state.transformOptions().xml_format
+        ? '.xml'
+        : '.txt';
+      const defaultFilename = `code_context${extension}`;
+      return this.api.selectSaveFile(defaultFilename, extension).pipe(
+        tap((res) => {
+          if (res.success && res.path) {
+            this.state.setExportPath(res.path);
+            this.state.appendLog(`Выбран путь экспорта: ${res.path}`);
+          }
+        }),
+        catchError((err: unknown) => {
+          const message = extractErrorMessage(err);
+          this.state.appendLog(`Ошибка выбора пути сохранения: ${message}`);
+          return EMPTY;
+        }),
+      );
+    }),
+  );
+
+  private readonly sideEffects$ = merge(
+    this.desktopFolderHandler$,
+    this.desktopSaveHandler$,
+  );
 
   constructor() {
     this.sideEffects$.pipe(takeUntilDestroyed()).subscribe();
   }
 
   protected onProjectDirChange(event: Event): void {
-    const input = event.target as HTMLInputElement | null;
-    if (!input) {
-      return;
+    if (event.target instanceof HTMLInputElement) {
+      const path = event.target.value.trim();
+      this.state.setRootPath(path);
     }
-    const path = input.value.trim();
-    this.state.setRootPath(path);
   }
 
   protected onExportPathChange(event: Event): void {
-    const input = event.target as HTMLInputElement | null;
-    if (!input) {
-      return;
+    if (event.target instanceof HTMLInputElement) {
+      const path = event.target.value.trim();
+      this.state.setExportPath(path);
     }
-    const path = input.value.trim();
-    this.state.setExportPath(path);
   }
 
   protected async browseProjectDir(): Promise<void> {
@@ -112,44 +141,57 @@ export class PathsPanelComponent {
     } catch (err: unknown) {
       const isAbort = err instanceof Error && err.name === 'AbortError';
       if (!isAbort) {
-        const message = this.extractErrorMessage(err);
+        const message = extractErrorMessage(err);
         this.state.appendLog(`Ошибка открытия директории: ${message}`);
       }
     }
   }
 
-  protected browseExportPath(): void {
-    const currentPath = this.state.exportPath();
+  protected async browseExportPath(): Promise<void> {
+    if (this.platform.isDesktop()) {
+      this.browseSaveTrigger$.next();
+      return;
+    }
+
     const extension = this.state.transformOptions().xml_format
       ? '.xml'
       : '.txt';
+    const defaultName = `code_context${extension}`;
 
-    if (!currentPath && this.state.rootPath()) {
-      this.state.setExportPath(
-        `${this.state.rootPath().replace(/[\\/]$/, '')}/code_context${extension}`,
-      );
-    }
-  }
-
-  private extractErrorMessage(err: unknown): string {
-    if (err instanceof Error) {
-      return err.message;
-    }
-    if (err && typeof err === 'object') {
-      if ('error' in err) {
-        const httpErr = (err as { error: unknown }).error;
-        if (typeof httpErr === 'string') {
-          return httpErr;
+    if (hasSaveFilePicker(window)) {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: defaultName,
+          types: [
+            {
+              description:
+                extension === '.xml' ? 'XML Document' : 'Text Document',
+              accept: {
+                [extension === '.xml' ? 'application/xml' : 'text/plain']: [
+                  extension,
+                ],
+              },
+            },
+          ],
+        });
+        if (handle.name) {
+          this.state.setExportPath(handle.name);
         }
-        if (httpErr && typeof httpErr === 'object' && 'detail' in httpErr) {
-          return String((httpErr as { detail: unknown }).detail);
+      } catch (err: unknown) {
+        const isAbort = err instanceof Error && err.name === 'AbortError';
+        if (!isAbort) {
+          this.state.setExportPath(defaultName);
         }
-        return JSON.stringify(httpErr);
       }
-      if ('message' in err) {
-        return String((err as { message: unknown }).message);
+    } else {
+      const currentPath = this.state.exportPath();
+      if (!currentPath && this.state.rootPath()) {
+        this.state.setExportPath(
+          `${this.state.rootPath().replace(/[\\/]$/, '')}/code_context${extension}`,
+        );
+      } else if (!currentPath) {
+        this.state.setExportPath(defaultName);
       }
     }
-    return String(err);
   }
 }

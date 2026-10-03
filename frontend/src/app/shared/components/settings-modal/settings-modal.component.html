@@ -7,38 +7,16 @@
       </div>
 
       <div class="modal-tabs">
-        <button
-          type="button"
-          class="tab-btn"
-          [class.active]="activeTab() === 'general'"
-          (click)="setTab('general')"
-        >
-          Общие
-        </button>
-        <button
-          type="button"
-          class="tab-btn"
-          [class.active]="activeTab() === 'extensions'"
-          (click)="setTab('extensions')"
-        >
-          Расширения файлов
-        </button>
-        <button
-          type="button"
-          class="tab-btn"
-          [class.active]="activeTab() === 'excludes'"
-          (click)="setTab('excludes')"
-        >
-          Папки-исключения
-        </button>
-        <button
-          type="button"
-          class="tab-btn"
-          [class.active]="activeTab() === 'gitignore'"
-          (click)="setTab('gitignore')"
-        >
-          Исключения .gitignore
-        </button>
+        @for (tab of tabs; track tab.id) {
+          <button
+            type="button"
+            class="tab-btn"
+            [class.active]="activeTab() === tab.id"
+            (click)="setTab(tab.id)"
+          >
+            {{ tab.label }}
+          </button>
+        }
       </div>
 
       <div class="modal-body" [formGroup]="form">

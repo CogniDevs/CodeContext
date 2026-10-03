@@ -34,7 +34,7 @@ export class HeaderComponent {
     const root = this.stateService.rootPath();
     if (root) {
       const parts = root.replace(/\\/g, '/').split('/');
-      return parts[parts.length - 1] || root;
+      return parts[parts.length - 1] ?? root;
     }
     return '';
   });
@@ -45,33 +45,6 @@ export class HeaderComponent {
     }
     return this.platformService.isDesktop() ? 'Desktop API' : 'WASM Web';
   });
-
-  protected async onOpenDirectory(): Promise<void> {
-    try {
-      await this.fileSystemService.openDirectoryPicker(
-        this.stateService.scanOptions(),
-      );
-      await this.stateService.generatePayload();
-    } catch (err: unknown) {
-      const isAbort = err instanceof Error && err.name === 'AbortError';
-      if (!isAbort) {
-        const message = err instanceof Error ? err.message : String(err);
-        alert(`Ошибка открытия проекта: ${message}`);
-      }
-    }
-  }
-
-  protected async onFileInputChange(event: Event): Promise<void> {
-    const input = event.target as HTMLInputElement | null;
-    if (input && input.files && input.files.length > 0) {
-      await this.fileSystemService.readFromFiles(
-        input.files,
-        this.stateService.scanOptions(),
-      );
-      await this.stateService.generatePayload();
-      input.value = '';
-    }
-  }
 
   protected onOpenSettings(): void {
     this.openSettingsRequested.emit();

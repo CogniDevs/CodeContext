@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
-import { WorkspaceLayoutComponent } from '@view/workspace-layout/workspace-layout.component';
+import { WorkspaceLayoutComponent } from '@layouts/workspace-layout/workspace-layout.component';
 
 @Component({
   selector: 'app-root',

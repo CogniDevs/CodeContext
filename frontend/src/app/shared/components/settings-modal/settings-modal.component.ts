@@ -2,23 +2,27 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  DestroyRef,
   inject,
   OnInit,
   signal,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { HttpClient } from '@angular/common/http';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { catchError, EMPTY, tap } from 'rxjs';
 
-import { Theme } from '@models/context.models';
+import { DefaultSettingsConfig, Theme } from '@models/settings.model';
 import { ApiService } from '@services/api.service';
 import { PlatformService } from '@services/platform.service';
 import { StateService } from '@services/state.service';
 import { ThemeService } from '@services/theme.service';
-
-type SettingsTab = 'general' | 'extensions' | 'excludes' | 'gitignore';
-
-interface SettingsPresetMap {
-  [key: string]: string[];
-}
+import {
+  SettingsModalTabItem,
+  SettingsPresetMap,
+  SettingsTab,
+} from '@shared/components/settings-modal/settings-modal.model';
+import { SETTINGS_TABS } from '@shared/components/settings-modal/settings-modal.data';
 
 @Component({
   selector: 'app-settings-modal',
@@ -29,10 +33,14 @@ interface SettingsPresetMap {
   imports: [ReactiveFormsModule],
 })
 export class SettingsModalComponent implements OnInit {
+  protected readonly tabs: readonly SettingsModalTabItem[] = SETTINGS_TABS;
+
   protected readonly state = inject(StateService);
   protected readonly themeService = inject(ThemeService);
   private readonly platform = inject(PlatformService);
   private readonly api = inject(ApiService);
+  private readonly http = inject(HttpClient);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly form = new FormGroup({
     useGitignore: new FormControl<boolean>(true, { nonNullable: true }),
@@ -48,17 +56,19 @@ export class SettingsModalComponent implements OnInit {
   readonly activeTab = signal<SettingsTab>('general');
 
   readonly presets = signal<SettingsPresetMap>({});
-  readonly allExtensions = signal<string[]>([]);
+  readonly allExtensions = signal<readonly string[]>([]);
   readonly activeExtensions = signal<Set<string>>(new Set<string>());
-  readonly allExcludes = signal<string[]>([]);
+  readonly allExcludes = signal<readonly string[]>([]);
   readonly activeExcludes = signal<Set<string>>(new Set<string>());
   readonly disabledGitignoreRules = signal<Set<string>>(new Set<string>());
 
-  readonly projectGitignoreRules = computed<string[]>(() => {
+  readonly projectGitignoreRules = computed<readonly string[]>(() => {
     return this.state.projectGitignoreRules();
   });
 
-  readonly presetKeys = computed<string[]>(() => Object.keys(this.presets()));
+  readonly presetKeys = computed<readonly string[]>(() =>
+    Object.keys(this.presets()),
+  );
 
   ngOnInit(): void {
     this.loadDefaultSettings();
@@ -101,13 +111,11 @@ export class SettingsModalComponent implements OnInit {
   }
 
   protected onPresetChange(event: Event): void {
-    const target = event.target as HTMLSelectElement | null;
-    if (!target) {
-      return;
+    if (event.target instanceof HTMLSelectElement) {
+      const presetName = event.target.value;
+      const exts = this.presets()[presetName] ?? [];
+      this.activeExtensions.set(new Set<string>(exts));
     }
-    const presetName = target.value;
-    const exts = this.presets()[presetName] ?? [];
-    this.activeExtensions.set(new Set<string>(exts));
   }
 
   protected isExtActive(ext: string): boolean {
@@ -218,11 +226,15 @@ export class SettingsModalComponent implements OnInit {
         manual_excludes: Array.from(this.activeExcludes()),
         gitignore_disabled_rules: disabledList,
       };
-      this.api.saveSettings(updatedSettings).subscribe();
+      this.api
+        .saveSettings(updatedSettings)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe();
 
       if (this.state.rootPath()) {
         this.api
           .scanDirectory(this.state.rootPath(), this.state.scanOptions())
+          .pipe(takeUntilDestroyed(this.destroyRef))
           .subscribe({
             next: (tree) => {
               this.state.setRootNode(tree, this.state.rootPath());
@@ -237,34 +249,38 @@ export class SettingsModalComponent implements OnInit {
     this.close();
   }
 
-  private async loadDefaultSettings(): Promise<void> {
-    try {
-      const res = await fetch('assets/resources/default_settings.json');
-      if (res.ok) {
-        const data: {
-          presets?: SettingsPresetMap;
-          all_known_extensions?: string[];
-          global_excludes?: string[];
-        } = await res.json();
+  private loadDefaultSettings(): void {
+    this.http
+      .get<DefaultSettingsConfig>('assets/resources/default_settings.json')
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        tap((data: DefaultSettingsConfig) => {
+          if (!data) {
+            return;
+          }
 
-        if (data.presets) {
-          this.presets.set(data.presets);
-        }
+          if (data.presets) {
+            this.presets.set(data.presets);
+          }
 
-        const currentActiveExts = this.state.scanOptions().whitelist_extensions;
-        const loadedExts = data.all_known_extensions ?? [];
-        this.allExtensions.set(
-          Array.from(new Set<string>([...loadedExts, ...currentActiveExts])),
-        );
+          const currentActiveExts =
+            this.state.scanOptions().whitelist_extensions;
+          const loadedExts = data.all_known_extensions ?? [];
+          this.allExtensions.set(
+            Array.from(new Set<string>([...loadedExts, ...currentActiveExts])),
+          );
 
-        const currentActiveExcludes = this.state.scanOptions().manual_excludes;
-        const loadedExcludes = data.global_excludes ?? [];
-        this.allExcludes.set(
-          Array.from(
-            new Set<string>([...loadedExcludes, ...currentActiveExcludes]),
-          ),
-        );
-      }
-    } catch {}
+          const currentActiveExcludes =
+            this.state.scanOptions().manual_excludes;
+          const loadedExcludes = data.global_excludes ?? [];
+          this.allExcludes.set(
+            Array.from(
+              new Set<string>([...loadedExcludes, ...currentActiveExcludes]),
+            ),
+          );
+        }),
+        catchError(() => EMPTY),
+      )
+      .subscribe();
   }
 }

@@ -2,40 +2,33 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  DestroyRef,
   inject,
   OnInit,
   output,
   signal,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { HttpClient } from '@angular/common/http';
 import {
   FormControl,
   FormGroup,
   ReactiveFormsModule,
   Validators,
 } from '@angular/forms';
+import { catchError, EMPTY, tap } from 'rxjs';
 
-import { PromptPreset, RuleItem } from '@models/context.models';
+import { PromptPreset, RuleItem } from '@models/prompt.model';
 import { ApiService } from '@services/api.service';
 import { PlatformService } from '@services/platform.service';
-
-interface CategoryTab {
-  key: string;
-  title: string;
-}
-
-const CATEGORY_TABS: CategoryTab[] = [
-  { key: 'system_role', title: 'Роль ИИ' },
-  { key: 'interaction_protocol', title: 'Протокол диалога' },
-  { key: 'quality_standards', title: 'Стандарты качества' },
-  { key: 'version_alignment', title: 'Синхронизация версий' },
-];
-
-const XML_TAG_MAP: Record<string, string> = {
-  system_role: 'expert_role',
-  interaction_protocol: 'interaction_protocol',
-  quality_standards: 'code_generation_standards',
-  version_alignment: 'technology_alignment',
-};
+import {
+  CategoryTab,
+  PromptModalMode,
+} from '@shared/components/prompt-modal/prompt-modal.model';
+import {
+  CATEGORY_TABS,
+  XML_TAG_MAP,
+} from '@shared/components/prompt-modal/prompt-modal.data';
 
 @Component({
   selector: 'app-prompt-modal',
@@ -46,12 +39,14 @@ const XML_TAG_MAP: Record<string, string> = {
   imports: [ReactiveFormsModule],
 })
 export class PromptModalComponent implements OnInit {
+  protected readonly categories: readonly CategoryTab[] = CATEGORY_TABS;
+
   private readonly api = inject(ApiService);
   private readonly platform = inject(PlatformService);
+  private readonly http = inject(HttpClient);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly promptSaved = output<PromptPreset>();
-
-  protected readonly categories = CATEGORY_TABS;
 
   protected readonly form = new FormGroup({
     title: new FormControl<string>('', {
@@ -62,19 +57,15 @@ export class PromptModalComponent implements OnInit {
   });
 
   readonly isOpen = signal<boolean>(false);
-  readonly mode = signal<'edit' | 'create'>('edit');
+  readonly mode = signal<PromptModalMode>('edit');
   readonly activeCategory = signal<string>('system_role');
   readonly rulesData = signal<Record<string, RuleItem[]>>({});
 
   private readonly currentPromptKey = signal<string>('');
   private defaultRulesSnapshot: Record<string, RuleItem[]> = {};
 
-  readonly currentCategoryRules = computed<RuleItem[]>(() => {
+  readonly currentCategoryRules = computed<readonly RuleItem[]>(() => {
     return this.rulesData()[this.activeCategory()] ?? [];
-  });
-
-  readonly isSaveDisabled = computed<boolean>(() => {
-    return this.form.controls.title.value.trim().length === 0;
   });
 
   ngOnInit(): void {
@@ -121,7 +112,7 @@ export class PromptModalComponent implements OnInit {
   }
 
   protected onSave(): void {
-    if (this.isSaveDisabled()) {
+    if (this.form.invalid) {
       return;
     }
 
@@ -137,31 +128,39 @@ export class PromptModalComponent implements OnInit {
     };
 
     if (this.platform.isDesktop()) {
-      this.api.updatePrompt(preset).subscribe({
-        next: () => {
-          this.promptSaved.emit(preset);
-          this.close();
-        },
-        error: () => {
-          this.promptSaved.emit(preset);
-          this.close();
-        },
-      });
+      this.api
+        .updatePrompt(preset)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: () => {
+            this.promptSaved.emit(preset);
+            this.close();
+          },
+          error: () => {
+            this.promptSaved.emit(preset);
+            this.close();
+          },
+        });
     } else {
       this.promptSaved.emit(preset);
       this.close();
     }
   }
 
-  private async loadInitialRules(): Promise<void> {
-    try {
-      const res = await fetch('assets/resources/default_rules.json');
-      if (res.ok) {
-        const data: Record<string, RuleItem[]> = await res.json();
-        this.defaultRulesSnapshot = data;
-        this.rulesData.set(JSON.parse(JSON.stringify(data)));
-      }
-    } catch {}
+  private loadInitialRules(): void {
+    this.http
+      .get<Record<string, RuleItem[]>>('assets/resources/default_rules.json')
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        tap((data: Record<string, RuleItem[]>) => {
+          if (data) {
+            this.defaultRulesSnapshot = data;
+            this.rulesData.set(JSON.parse(JSON.stringify(data)));
+          }
+        }),
+        catchError(() => EMPTY),
+      )
+      .subscribe();
   }
 
   private compileLocalPrompt(): string {

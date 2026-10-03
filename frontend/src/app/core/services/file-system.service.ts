@@ -1,113 +1,25 @@
 import { inject, Injectable, signal } from '@angular/core';
 
-import { FileNode, ScanOptions } from '@models/context.models';
+import { DirectoryScanResult, FileNode } from '@models/tree.model';
+import { ScanOptions } from '@models/settings.model';
 import { WasmService } from '@services/wasm.service';
-
-interface WebkitFileSystemEntry {
-  isFile: boolean;
-  isDirectory: boolean;
-  name: string;
-  fullPath: string;
-}
-
-interface WebkitFileEntry extends WebkitFileSystemEntry {
-  file: (
-    successCallback: (file: File) => void,
-    errorCallback?: (error: unknown) => void,
-  ) => void;
-}
-
-interface WebkitDirectoryReader {
-  readEntries: (
-    successCallback: (entries: WebkitFileSystemEntry[]) => void,
-    errorCallback?: (error: unknown) => void,
-  ) => void;
-}
-
-interface WebkitDirectoryEntry extends WebkitFileSystemEntry {
-  createReader: () => WebkitDirectoryReader;
-}
-
-const DEFAULT_HARD_EXCLUDES: string[] = [
-  '.git',
-  'node_modules',
-  'dist',
-  'target',
-  '.angular',
-  'build',
-  'out',
-  '__pycache__',
-  '.venv',
-  'venv',
-  '.idea',
-  '.vscode',
-  'icon_data.py',
-];
-
-const DEFAULT_BINARY_EXTENSIONS: string[] = [
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.gif',
-  '.webp',
-  '.ico',
-  '.pdf',
-  '.exe',
-  '.dll',
-  '.bin',
-  '.zip',
-  '.tar',
-  '.gz',
-  '.tgz',
-  '.rar',
-  '.7z',
-  '.mp3',
-  '.mp4',
-  '.wav',
-  '.avi',
-  '.mov',
-  '.woff',
-  '.woff2',
-  '.ttf',
-  '.eot',
-  '.otf',
-  '.db',
-  '.sqlite',
-  '.sqlite3',
-  '.dmg',
-  '.iso',
-  '.msi',
-  '.pkg',
-  '.sys',
-  '.cab',
-  '.psd',
-  '.class',
-  '.pyc',
-  '.pyo',
-  '.pyd',
-  '.o',
-  '.obj',
-  '.so',
-  '.dylib',
-  '.suo',
-  '.svg',
-  '.rlib',
-  '.rmeta',
-  '.pdb',
-  '.whl',
-  '.wasm',
-  '.d',
-  '.a',
-  '.lib',
-];
-
-const MAX_WEB_FILE_SIZE_BYTES = 1024 * 1024 * 1.5;
-const MAX_SINGLE_LINE_LENGTH = 4000;
-
-export interface DirectoryScanResult {
-  rootNode: FileNode | null;
-  gitignoreRules: string[];
-}
+import {
+  DEFAULT_BINARY_EXTENSIONS,
+  DEFAULT_HARD_EXCLUDES,
+  MAX_SINGLE_LINE_LENGTH,
+  MAX_WEB_FILE_SIZE_BYTES,
+} from '@core/utils/constants';
+import {
+  hasDirectoryPicker,
+  hasWebkitGetAsEntry,
+  isFileSystemDirectoryHandle,
+  isFileSystemFileHandle,
+  isWebkitDirectoryEntry,
+  isWebkitFileEntry,
+  WebkitDirectoryEntry,
+  WebkitFileEntry,
+  WebkitFileSystemEntry,
+} from '@core/utils/type-guards';
 
 @Injectable({
   providedIn: 'root',
@@ -120,19 +32,6 @@ export class FileSystemService {
   readonly rootNode = signal<FileNode | null>(null);
 
   private readonly fileContentCache = new Map<string, string>();
-
-  cleanNodeForWasm(node: FileNode): Record<string, unknown> {
-    return {
-      name: node.name,
-      full_path: node.full_path,
-      rel_path: node.rel_path,
-      is_dir: node.is_dir,
-      size: node.size,
-      children: node.children
-        ? node.children.map((child) => this.cleanNodeForWasm(child))
-        : [],
-    };
-  }
 
   setRootNode(node: FileNode | null, projectName?: string): void {
     this.rootNode.set(node);
@@ -152,14 +51,9 @@ export class FileSystemService {
   async openDirectoryPicker(
     options: ScanOptions,
   ): Promise<DirectoryScanResult> {
-    if ('showDirectoryPicker' in window) {
+    if (hasDirectoryPicker(window)) {
       try {
-        const pickerFn = (
-          window as unknown as {
-            showDirectoryPicker: () => Promise<FileSystemDirectoryHandle>;
-          }
-        ).showDirectoryPicker;
-        const handle = await pickerFn();
+        const handle = await window.showDirectoryPicker();
 
         this.isScanning.set(true);
         await this.wasmService.init();
@@ -191,41 +85,8 @@ export class FileSystemService {
     return await this.openInputDirectoryFallback(options);
   }
 
-  private openInputDirectoryFallback(
-    options: ScanOptions,
-  ): Promise<DirectoryScanResult> {
-    return new Promise((resolve) => {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.setAttribute('webkitdirectory', '');
-      input.setAttribute('directory', '');
-      input.style.display = 'none';
-      document.body.appendChild(input);
-
-      input.onchange = async () => {
-        try {
-          if (input.files && input.files.length > 0) {
-            const res = await this.readFromFiles(input.files, options);
-            resolve(res);
-          } else {
-            resolve({ rootNode: null, gitignoreRules: [] });
-          }
-        } finally {
-          document.body.removeChild(input);
-        }
-      };
-
-      input.oncancel = () => {
-        document.body.removeChild(input);
-        resolve({ rootNode: null, gitignoreRules: [] });
-      };
-
-      input.click();
-    });
-  }
-
   async readFromFiles(
-    files: FileList | File[],
+    files: FileList | readonly File[],
     options: ScanOptions,
   ): Promise<DirectoryScanResult> {
     this.isScanning.set(true);
@@ -237,7 +98,9 @@ export class FileSystemService {
         return { rootNode: null, gitignoreRules: [] };
       }
 
-      const firstPath = fileArray[0].webkitRelativePath || fileArray[0].name;
+      const firstFile = fileArray[0];
+      const firstPath =
+        firstFile?.webkitRelativePath || firstFile?.name || 'project';
       const rootName = firstPath.split('/')[0] || 'project';
       this.currentProjectName.set(rootName);
 
@@ -253,7 +116,9 @@ export class FileSystemService {
       if (gitignoreFile && options.use_gitignore) {
         const text = await gitignoreFile.text();
         gitignoreRules = this.parseGitignoreText(text);
-        const mergedExcludes = new Set([...effectiveOptions.manual_excludes]);
+        const mergedExcludes = new Set<string>([
+          ...effectiveOptions.manual_excludes,
+        ]);
         for (const r of gitignoreRules) {
           if (!options.gitignore_disabled_rules.includes(r)) {
             mergedExcludes.add(r);
@@ -302,61 +167,34 @@ export class FileSystemService {
     items: DataTransferItemList,
     options: ScanOptions,
   ): Promise<DirectoryScanResult> {
+    let rootEntry: WebkitDirectoryEntry | null = null;
+    const fileList: File[] = [];
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item && item.kind === 'file') {
+        if (hasWebkitGetAsEntry(item)) {
+          const entry = item.webkitGetAsEntry();
+          if (isWebkitDirectoryEntry(entry)) {
+            rootEntry = entry;
+            break;
+          }
+        }
+        const file = item.getAsFile();
+        if (file) {
+          fileList.push(file);
+        }
+      }
+    }
+
     this.isScanning.set(true);
     try {
       await this.wasmService.init();
 
-      let rootHandle: FileSystemDirectoryHandle | null = null;
-      let rootEntry: WebkitDirectoryEntry | null = null;
-
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.kind === 'file') {
-          if ('getAsFileSystemHandle' in item) {
-            const handleFn = (
-              item as unknown as {
-                getAsFileSystemHandle: () => Promise<FileSystemHandle | null>;
-              }
-            ).getAsFileSystemHandle;
-            const handle = await handleFn();
-            if (handle && handle.kind === 'directory') {
-              rootHandle = handle as FileSystemDirectoryHandle;
-              break;
-            }
-          }
-          if ('webkitGetAsEntry' in item) {
-            const entryFn = (
-              item as unknown as {
-                webkitGetAsEntry: () => WebkitFileSystemEntry | null;
-              }
-            ).webkitGetAsEntry;
-            const entry = entryFn();
-            if (entry && entry.isDirectory) {
-              rootEntry = entry as WebkitDirectoryEntry;
-              break;
-            }
-          }
-        }
-      }
-
-      if (rootHandle) {
-        this.currentProjectName.set(rootHandle.name);
-        const { effectiveOptions, gitignoreRules } =
-          await this.prepareScanOptions(rootHandle, options);
-        const root = await this.scanDirectoryHandle(
-          rootHandle,
-          rootHandle.name,
-          '',
-          effectiveOptions,
-        );
-        this.clearCache();
-        this.rootNode.set(root);
-        return { rootNode: root, gitignoreRules };
-      }
-
       if (rootEntry) {
         this.currentProjectName.set(rootEntry.name);
-        const effectiveOptions = this.ensureDefaultExcludes(options);
+        const { effectiveOptions, gitignoreRules } =
+          await this.prepareScanOptionsForWebkitEntry(rootEntry, options);
         const root = await this.scanWebkitEntry(
           rootEntry,
           rootEntry.name,
@@ -365,18 +203,7 @@ export class FileSystemService {
         );
         this.clearCache();
         this.rootNode.set(root);
-        return { rootNode: root, gitignoreRules: [] };
-      }
-
-      const fileList: File[] = [];
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.kind === 'file') {
-          const file = item.getAsFile();
-          if (file) {
-            fileList.push(file);
-          }
-        }
+        return { rootNode: root, gitignoreRules };
       }
 
       if (fileList.length > 0) {
@@ -429,7 +256,8 @@ export class FileSystemService {
     if (content) {
       const lines = content.split('\n');
       for (let i = 0; i < lines.length; i++) {
-        if (lines[i].length > MAX_SINGLE_LINE_LENGTH) {
+        const line = lines[i];
+        if (line && line.length > MAX_SINGLE_LINE_LENGTH) {
           content = `[File '${node.name}' omitted: contains excessively long single-line data]`;
           break;
         }
@@ -440,10 +268,43 @@ export class FileSystemService {
     return content;
   }
 
+  private openInputDirectoryFallback(
+    options: ScanOptions,
+  ): Promise<DirectoryScanResult> {
+    return new Promise((resolve) => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.setAttribute('webkitdirectory', '');
+      input.setAttribute('directory', '');
+      input.style.display = 'none';
+      document.body.appendChild(input);
+
+      input.onchange = async () => {
+        try {
+          if (input.files && input.files.length > 0) {
+            const res = await this.readFromFiles(input.files, options);
+            resolve(res);
+          } else {
+            resolve({ rootNode: null, gitignoreRules: [] });
+          }
+        } finally {
+          document.body.removeChild(input);
+        }
+      };
+
+      input.oncancel = () => {
+        document.body.removeChild(input);
+        resolve({ rootNode: null, gitignoreRules: [] });
+      };
+
+      input.click();
+    });
+  }
+
   private ensureDefaultExcludes(options: ScanOptions): ScanOptions {
-    const excludes = new Set([
+    const excludes = new Set<string>([
       ...DEFAULT_HARD_EXCLUDES,
-      ...(options.manual_excludes || []),
+      ...options.manual_excludes,
     ]);
     return {
       ...options,
@@ -451,10 +312,102 @@ export class FileSystemService {
     };
   }
 
+  private async parseGitignoreFromWebkitEntry(
+    entry: WebkitDirectoryEntry,
+  ): Promise<string[]> {
+    return new Promise((resolve) => {
+      if ('getFile' in entry && typeof entry.getFile === 'function') {
+        entry.getFile(
+          '.gitignore',
+          {},
+          (fileEntry) => {
+            if (isWebkitFileEntry(fileEntry)) {
+              fileEntry.file(
+                async (file) => {
+                  try {
+                    const text = await file.text();
+                    resolve(this.parseGitignoreText(text));
+                  } catch {
+                    resolve([]);
+                  }
+                },
+                () => resolve([]),
+              );
+            } else {
+              resolve([]);
+            }
+          },
+          () => resolve([]),
+        );
+      } else {
+        const reader = entry.createReader();
+        reader.readEntries(
+          (entries) => {
+            const gitignoreEntry = entries.find(
+              (e) => e.name === '.gitignore' && e.isFile,
+            );
+            if (gitignoreEntry && isWebkitFileEntry(gitignoreEntry)) {
+              gitignoreEntry.file(
+                async (file) => {
+                  try {
+                    const text = await file.text();
+                    resolve(this.parseGitignoreText(text));
+                  } catch {
+                    resolve([]);
+                  }
+                },
+                () => resolve([]),
+              );
+            } else {
+              resolve([]);
+            }
+          },
+          () => resolve([]),
+        );
+      }
+    });
+  }
+
+  private async prepareScanOptionsForWebkitEntry(
+    rootEntry: WebkitDirectoryEntry,
+    options: ScanOptions,
+  ): Promise<{
+    readonly effectiveOptions: ScanOptions;
+    readonly gitignoreRules: string[];
+  }> {
+    const baseOptions = this.ensureDefaultExcludes(options);
+    if (!baseOptions.use_gitignore) {
+      return { effectiveOptions: baseOptions, gitignoreRules: [] };
+    }
+
+    const gitignoreRules = await this.parseGitignoreFromWebkitEntry(rootEntry);
+    if (gitignoreRules.length === 0) {
+      return { effectiveOptions: baseOptions, gitignoreRules: [] };
+    }
+
+    const mergedExcludes = new Set<string>([...baseOptions.manual_excludes]);
+    for (const rule of gitignoreRules) {
+      if (!baseOptions.gitignore_disabled_rules.includes(rule)) {
+        mergedExcludes.add(rule);
+      }
+    }
+
+    return {
+      effectiveOptions: {
+        ...baseOptions,
+        manual_excludes: Array.from(mergedExcludes),
+      },
+      gitignoreRules,
+    };
+  }
+
   private async prepareScanOptions(
     rootHandle: FileSystemDirectoryHandle,
     options: ScanOptions,
-  ): Promise<{ effectiveOptions: ScanOptions; gitignoreRules: string[] }> {
+  ): Promise<{
+    readonly effectiveOptions: ScanOptions;
+    readonly gitignoreRules: string[];
+  }> {
     const baseOptions = this.ensureDefaultExcludes(options);
     if (!baseOptions.use_gitignore) {
       return { effectiveOptions: baseOptions, gitignoreRules: [] };
@@ -465,7 +418,7 @@ export class FileSystemService {
       return { effectiveOptions: baseOptions, gitignoreRules: [] };
     }
 
-    const mergedExcludes = new Set([...baseOptions.manual_excludes]);
+    const mergedExcludes = new Set<string>([...baseOptions.manual_excludes]);
     for (const rule of gitignoreRules) {
       if (!baseOptions.gitignore_disabled_rules.includes(rule)) {
         mergedExcludes.add(rule);
@@ -483,16 +436,16 @@ export class FileSystemService {
 
   private parseGitignoreText(text: string): string[] {
     const rules: string[] = [];
-    for (let line of text.split('\n')) {
-      line = line.trim();
+    for (let rawLine of text.split('\n')) {
+      const line = rawLine.trim();
       if (!line || line.startsWith('#')) {
         continue;
       }
-      if (line.includes(' #')) {
-        line = line.split(' #')[0].trim();
-      }
-      if (line) {
-        rules.push(line);
+      const cleanRule = line.includes(' #')
+        ? line.split(' #')[0]?.trim()
+        : line;
+      if (cleanRule) {
+        rules.push(cleanRule);
       }
     }
     return rules;
@@ -547,26 +500,19 @@ export class FileSystemService {
         if (options.ignore_binary) {
           if (
             DEFAULT_BINARY_EXTENSIONS.includes(ext) ||
-            (options.binary_extensions &&
-              options.binary_extensions.includes(ext))
+            options.binary_extensions.includes(ext)
           ) {
             return true;
           }
         }
 
         if (options.ignore_lockfiles) {
-          if (
-            options.lockfiles_excludes &&
-            options.lockfiles_excludes.includes(name)
-          ) {
+          if (options.lockfiles_excludes.includes(name)) {
             return true;
           }
         }
 
-        if (
-          options.whitelist_extensions &&
-          options.whitelist_extensions.length > 0
-        ) {
+        if (options.whitelist_extensions.length > 0) {
           if (!options.whitelist_extensions.includes(ext)) {
             return true;
           }
@@ -592,52 +538,45 @@ export class FileSystemService {
       children: [],
     };
 
-    const entries: Array<[string, FileSystemHandle]> = [];
+    const entries: FileSystemHandle[] = [];
     try {
-      const asyncEntries = (
-        dirHandle as unknown as {
-          entries: () => AsyncIterable<[string, FileSystemHandle]>;
-        }
-      ).entries();
-      for await (const entry of asyncEntries) {
-        entries.push(entry);
+      for await (const handle of dirHandle.values()) {
+        entries.push(handle);
       }
     } catch {
       return currentNode;
     }
 
-    entries.sort(([nameA, handleA], [nameB, handleB]) => {
-      const isDirA = handleA.kind === 'directory';
-      const isDirB = handleB.kind === 'directory';
-      if (isDirA !== isDirB) {
-        return isDirB ? 1 : -1;
+    entries.sort((a, b) => {
+      if (a.kind !== b.kind) {
+        return b.kind === 'directory' ? 1 : -1;
       }
-      return nameA.localeCompare(nameB);
+      return a.name.localeCompare(b.name);
     });
 
-    const dirEntries: Array<[string, FileSystemDirectoryHandle]> = [];
-    const fileEntries: Array<[string, FileSystemFileHandle]> = [];
+    const dirHandles: FileSystemDirectoryHandle[] = [];
+    const fileHandles: FileSystemFileHandle[] = [];
 
-    for (const [entryName, handle] of entries) {
-      const childRelPath = relPath ? `${relPath}/${entryName}` : entryName;
-      const isDir = handle.kind === 'directory';
+    for (const handle of entries) {
+      const childRelPath = relPath ? `${relPath}/${handle.name}` : handle.name;
+      const isDir = isFileSystemDirectoryHandle(handle);
 
       if (this.checkIsIgnored(childRelPath, isDir, options)) {
         continue;
       }
 
-      if (isDir) {
-        dirEntries.push([entryName, handle as FileSystemDirectoryHandle]);
-      } else {
-        fileEntries.push([entryName, handle as FileSystemFileHandle]);
+      if (isFileSystemDirectoryHandle(handle)) {
+        dirHandles.push(handle);
+      } else if (isFileSystemFileHandle(handle)) {
+        fileHandles.push(handle);
       }
     }
 
-    for (const [entryName, handle] of dirEntries) {
-      const childRelPath = relPath ? `${relPath}/${entryName}` : entryName;
+    for (const handle of dirHandles) {
+      const childRelPath = relPath ? `${relPath}/${handle.name}` : handle.name;
       const childNode = await this.scanDirectoryHandle(
         handle,
-        entryName,
+        handle.name,
         childRelPath,
         options,
       );
@@ -645,29 +584,33 @@ export class FileSystemService {
     }
 
     const fileNodes = await Promise.all(
-      fileEntries.map(async ([entryName, handle]) => {
-        const childRelPath = relPath ? `${relPath}/${entryName}` : entryName;
+      fileHandles.map(async (handle) => {
+        const childRelPath = relPath
+          ? `${relPath}/${handle.name}`
+          : handle.name;
         try {
           const file = await handle.getFile();
-          return {
-            name: entryName,
-            full_path: `${currentNode.full_path}/${entryName}`,
+          const node: FileNode = {
+            name: handle.name,
+            full_path: `${currentNode.full_path}/${handle.name}`,
             rel_path: childRelPath,
             is_dir: false,
             size: file.size,
             children: [],
             fileHandle: handle,
-          } as FileNode;
+          };
+          return node;
         } catch {
-          return {
-            name: entryName,
-            full_path: `${currentNode.full_path}/${entryName}`,
+          const fallbackNode: FileNode = {
+            name: handle.name,
+            full_path: `${currentNode.full_path}/${handle.name}`,
             rel_path: childRelPath,
             is_dir: false,
             size: 0,
             children: [],
             fileHandle: handle,
-          } as FileNode;
+          };
+          return fallbackNode;
         }
       }),
     );
@@ -729,10 +672,10 @@ export class FileSystemService {
         continue;
       }
 
-      if (isDir) {
-        dirEntries.push(childEntry as WebkitDirectoryEntry);
-      } else {
-        fileEntries.push(childEntry as WebkitFileEntry);
+      if (isWebkitDirectoryEntry(childEntry)) {
+        dirEntries.push(childEntry);
+      } else if (isWebkitFileEntry(childEntry)) {
+        fileEntries.push(childEntry);
       }
     }
 
@@ -758,7 +701,7 @@ export class FileSystemService {
           const file: File = await new Promise((resolve, reject) =>
             childEntry.file(resolve, reject),
           );
-          return {
+          const node: FileNode = {
             name: childEntry.name,
             full_path: `${currentNode.full_path}/${childEntry.name}`,
             rel_path: childRelPath,
@@ -766,16 +709,18 @@ export class FileSystemService {
             size: file.size,
             children: [],
             rawFile: file,
-          } as FileNode;
+          };
+          return node;
         } catch {
-          return {
+          const fallbackNode: FileNode = {
             name: childEntry.name,
             full_path: `${currentNode.full_path}/${childEntry.name}`,
             rel_path: childRelPath,
             is_dir: false,
             size: 0,
             children: [],
-          } as FileNode;
+          };
+          return fallbackNode;
         }
       }),
     );
@@ -784,7 +729,11 @@ export class FileSystemService {
     return currentNode;
   }
 
-  private addFileToTree(parent: FileNode, parts: string[], file: File): void {
+  private addFileToTree(
+    parent: FileNode,
+    parts: readonly string[],
+    file: File,
+  ): void {
     if (parts.length === 1) {
       const fileName = parts[0] ?? '';
       parent.children.push({

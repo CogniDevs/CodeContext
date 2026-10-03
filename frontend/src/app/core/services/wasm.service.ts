@@ -1,47 +1,63 @@
 import { Injectable, signal } from '@angular/core';
 
-import { ScanOptions, TransformOptions } from '@models/context.models';
+import { ScanOptions, TransformOptions } from '@models/settings.model';
+import { extractErrorMessage } from '@core/utils/type-guards';
 
 interface WasmCoreModule {
-  default?: (moduleOrPath?: unknown) => Promise<unknown>;
-  compress_whitespace_wasm: (text: string) => string;
-  sanitize_secrets_wasm: (text: string) => string;
-  strip_comments_wasm: (
+  readonly default?: (moduleOrPath?: unknown) => Promise<unknown>;
+  compress_whitespace_wasm(text: string): string;
+  sanitize_secrets_wasm(text: string): string;
+  strip_comments_wasm(
     text: string,
     extension: string,
     rulesJson?: string | null,
-  ) => string;
-  count_tokens_wasm: (text: string) => number;
-  is_ignored_wasm: (
+  ): string;
+  count_tokens_wasm(text: string): number;
+  is_ignored_wasm(
     relPath: string,
     isDir: boolean,
     optionsJson: string,
-  ) => boolean;
-  trace_dependencies_wasm: (
+  ): boolean;
+  trace_dependencies_wasm(
     rootDir: string,
     targetRelPath: string,
     content: string,
     allKnownPathsJson?: string | null,
-  ) => string[];
-  generate_standalone_tree_wasm: (
+  ): string[];
+  generate_standalone_tree_wasm(
     rootName: string,
     rootNodeJson: string,
     selectedPathsJson: string,
     xmlFormat: boolean,
-  ) => string;
-  build_payload_wasm: (
+  ): string;
+  build_payload_wasm(
     rootName: string,
     rootNodeJson: string,
     filesJson: string,
     selectedPathsJson: string,
     optionsJson: string,
-  ) => string;
-  calculate_pagerank_wasm: (
+  ): string;
+  calculate_pagerank_wasm(
     symbolsJson: string,
     edgesJson: string,
     damping: number,
     iterations: number,
-  ) => string;
+  ): string;
+}
+
+function isWasmCoreModule(value: unknown): value is WasmCoreModule {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'compress_whitespace_wasm' in value &&
+    'sanitize_secrets_wasm' in value &&
+    'strip_comments_wasm' in value &&
+    'count_tokens_wasm' in value &&
+    'is_ignored_wasm' in value &&
+    'trace_dependencies_wasm' in value &&
+    'generate_standalone_tree_wasm' in value &&
+    'build_payload_wasm' in value
+  );
 }
 
 @Injectable({
@@ -65,32 +81,6 @@ export class WasmService {
 
     this.initPromise = this.loadWasmModule();
     return this.initPromise;
-  }
-
-  private async loadWasmModule(): Promise<void> {
-    try {
-      const baseUrl = document.baseURI.endsWith('/')
-        ? document.baseURI
-        : `${document.baseURI}/`;
-      const jsUrl = new URL('assets/wasm/codecontext_core.js', baseUrl).href;
-      const wasm = (await import(/* @vite-ignore */ jsUrl)) as WasmCoreModule;
-
-      const wasmUrl = new URL('assets/wasm/codecontext_core_bg.wasm', baseUrl)
-        .href;
-
-      if (typeof wasm.default === 'function') {
-        await wasm.default(wasmUrl);
-      }
-
-      this.wasmModule = wasm;
-      this.isLoaded.set(true);
-      this.error.set(null);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.error.set(message);
-      this.isLoaded.set(false);
-      this.initPromise = null;
-    }
   }
 
   compressWhitespace(text: string): string {
@@ -135,7 +125,7 @@ export class WasmService {
     rootDir: string,
     targetRelPath: string,
     content: string,
-    allKnownPaths?: string[] | null,
+    allKnownPaths?: readonly string[] | null,
   ): string[] {
     if (!this.wasmModule) {
       return [];
@@ -155,7 +145,7 @@ export class WasmService {
   generateStandaloneTree(
     rootName: string,
     rootNodeJson: string,
-    selectedPaths: string[],
+    selectedPaths: readonly string[],
     xmlFormat: boolean,
   ): string {
     if (!this.wasmModule) {
@@ -173,7 +163,7 @@ export class WasmService {
     rootName: string,
     rootNodeJson: string,
     files: Array<[string, string]>,
-    selectedPaths: string[],
+    selectedPaths: readonly string[],
     options: TransformOptions,
   ): string {
     if (!this.wasmModule) {
@@ -203,5 +193,36 @@ export class WasmService {
       damping,
       iterations,
     );
+  }
+
+  private async loadWasmModule(): Promise<void> {
+    try {
+      const baseUrl = document.baseURI.endsWith('/')
+        ? document.baseURI
+        : `${document.baseURI}/`;
+      const jsUrl = new URL('assets/wasm/codecontext_core.js', baseUrl).href;
+      const importedModule: unknown = await import(jsUrl);
+
+      if (!isWasmCoreModule(importedModule)) {
+        throw new Error(
+          'Загруженный модуль WebAssembly не соответствует требуемому интерфейсу ядра.',
+        );
+      }
+
+      const wasmUrl = new URL('assets/wasm/codecontext_core_bg.wasm', baseUrl)
+        .href;
+
+      if (typeof importedModule.default === 'function') {
+        await importedModule.default(wasmUrl);
+      }
+
+      this.wasmModule = importedModule;
+      this.isLoaded.set(true);
+      this.error.set(null);
+    } catch (err: unknown) {
+      this.error.set(extractErrorMessage(err));
+      this.isLoaded.set(false);
+      this.initPromise = null;
+    }
   }
 }

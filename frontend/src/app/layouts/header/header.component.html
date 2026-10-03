@@ -22,15 +22,13 @@
 
     <button
       type="button"
-      class="btn btn-secondary theme-toggle"
+      class="btn btn-secondary"
       (click)="onToggleTheme()"
     >
       @if (themeService.currentTheme() === "dark") {
         <span class="icon icon-sun"></span>
-        <span>Светлая</span>
       } @else {
         <span class="icon icon-moon"></span>
-        <span>Темная</span>
       }
     </button>
   </div>

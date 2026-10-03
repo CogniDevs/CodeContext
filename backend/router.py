@@ -2,7 +2,7 @@ import os
 import sys
 import json
 import asyncio
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Query
 from sse_starlette.sse import EventSourceResponse
 
@@ -53,6 +53,35 @@ async def select_folder_endpoint():
         return {"success": False, "path": ""}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка диалога: {str(e)}")
+
+
+@api_router.post("/select-save-file")
+async def select_save_file_endpoint(req: Optional[Dict[str, Any]] = None):
+    try:
+        default_filename = ""
+        file_types: tuple = ()
+        if req:
+            default_filename = req.get("default_filename", "")
+            ext = req.get("extension", "").lower().strip(".")
+            if ext == "xml":
+                file_types = ("XML Files (*.xml)", "All Files (*.*)")
+            elif ext == "txt":
+                file_types = ("Text Files (*.txt)", "All Files (*.*)")
+
+        if webview and webview.windows:
+            window = webview.windows[0]
+            result = window.create_file_dialog(
+                webview.SAVE_DIALOG,
+                save_filename=default_filename,
+                file_types=file_types
+            )
+            if result:
+                save_path = result if isinstance(result, str) else result[0] if len(result) > 0 else ""
+                if save_path:
+                    return {"success": True, "path": save_path}
+        return {"success": False, "path": ""}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка диалога сохранения: {str(e)}")
 
 
 @api_router.get("/gitignore")

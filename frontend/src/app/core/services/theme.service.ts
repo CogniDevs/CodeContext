@@ -1,6 +1,7 @@
 import { effect, Injectable, signal } from '@angular/core';
 
-import { Theme } from '@models/context.models';
+import { Theme } from '@models/settings.model';
+import { STORAGE_KEY_THEME } from '@core/utils/constants';
 
 @Injectable({
   providedIn: 'root',
@@ -12,7 +13,7 @@ export class ThemeService {
     effect(() => {
       const theme = this.currentTheme();
       document.documentElement.setAttribute('data-theme', theme);
-      localStorage.setItem('codecontext_theme', theme);
+      localStorage.setItem(STORAGE_KEY_THEME, theme);
     });
   }
 
@@ -25,7 +26,7 @@ export class ThemeService {
   }
 
   private getInitialTheme(): Theme {
-    const saved = localStorage.getItem('codecontext_theme');
+    const saved = localStorage.getItem(STORAGE_KEY_THEME);
     if (saved === 'dark' || saved === 'light') {
       return saved;
     }

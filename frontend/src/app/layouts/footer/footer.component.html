@@ -29,11 +29,7 @@
       [disabled]="isExportDisabled()"
       (click)="downloadContextFile()"
     >
-      {{
-        state.transformOptions().xml_format
-          ? "Записать в XML"
-          : "Записать в TXT"
-      }}
+      {{ saveButtonText() }}
     </button>
   </div>
 </footer>

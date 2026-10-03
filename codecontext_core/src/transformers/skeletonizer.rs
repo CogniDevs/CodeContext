@@ -78,7 +78,7 @@ fn skeletonize_treesitter(
             result.extend_from_slice(&text_bytes[last_idx..start_clamped]);
         }
 
-        let replacement_bytes = if py {
+        let replacement_bytes: &[u8] = if py {
             b"\n    ...\n"
         } else {
             b" { ... }"

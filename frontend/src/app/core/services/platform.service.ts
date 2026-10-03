@@ -1,14 +1,24 @@
-import { computed, inject, Injectable, signal } from '@angular/core';
+import {
+  computed,
+  DestroyRef,
+  inject,
+  Injectable,
+  signal,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { HttpClient } from '@angular/common/http';
-import { catchError, firstValueFrom, of, tap } from 'rxjs';
+import { catchError, EMPTY, merge, Subject, switchMap, tap } from 'rxjs';
 
-import { ServiceStatus } from '@models/context.models';
+import { ServiceStatus } from '@models/api.model';
 
 @Injectable({
   providedIn: 'root',
 })
 export class PlatformService {
   private readonly http = inject(HttpClient);
+  private readonly destroyRef = inject(DestroyRef);
+
+  private readonly checkTrigger$ = new Subject<void>();
 
   readonly status = signal<ServiceStatus | null>(null);
   readonly isChecking = signal<boolean>(true);
@@ -20,15 +30,11 @@ export class PlatformService {
   readonly isWatcherAvailable = computed<boolean>(() => this.isDesktop());
   readonly isWasmOnly = computed<boolean>(() => !this.isDesktop());
 
-  constructor() {
-    this.checkPlatform();
-  }
-
-  async checkPlatform(): Promise<boolean> {
-    this.isChecking.set(true);
-    const result = await firstValueFrom(
-      this.http.get<ServiceStatus>('/api/status').pipe(
-        tap((res) => {
+  private readonly checkHandler$ = this.checkTrigger$.pipe(
+    switchMap(() => {
+      this.isChecking.set(true);
+      return this.http.get<ServiceStatus>('/api/status').pipe(
+        tap((res: ServiceStatus) => {
           this.status.set(res);
           this.isDesktop.set(true);
           this.isChecking.set(false);
@@ -37,10 +43,20 @@ export class PlatformService {
           this.status.set(null);
           this.isDesktop.set(false);
           this.isChecking.set(false);
-          return of(null);
+          return EMPTY;
         }),
-      ),
-    );
-    return result !== null;
+      );
+    }),
+  );
+
+  private readonly sideEffects$ = merge(this.checkHandler$);
+
+  constructor() {
+    this.sideEffects$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
+    this.checkTrigger$.next();
+  }
+
+  checkPlatform(): void {
+    this.checkTrigger$.next();
   }
 }
